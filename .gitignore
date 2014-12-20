@@ -1,0 +1,8 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+*.dll
+/g2flip/g2flip/Debug
+/g2flip/g2flip/Release
+/g2flip/g2flip/x64
