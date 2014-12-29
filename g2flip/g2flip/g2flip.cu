@@ -9,16 +9,18 @@
 #include "mapper.h"
 
 #define ITERATIONS 100
-// Actual thread size
+// Actual thread number
 #define BLOCK_SIZE 256
 #define GRID_SIZE 4096
+
 //#define GRID_SIZE 16384
 #define DEFAULT_DEPTH 60
 
 #define MAX_STREAMS 2
 
-const uint64_t NotH1H8 = 18374403900871474942ULL;
-const uint64_t NotA1A8 = 9187201950435737471ULL;
+const uint64_t NotA1A8 = 18374403900871474942ULL;
+const uint64_t NotH1H8 = 9187201950435737471ULL;
+const uint64_t NotEDGE = NotH1H8 & NotA1A8;
 
 void initPositions(ulonglong2* p,int numberOfPositions);
 
@@ -27,8 +29,10 @@ int getRow(char* s, char c);
 char* toBoard(ulonglong2 b, int labels, int color, char* board);
 char* toRow(unsigned int r, int color, char* row);
 char* toBoard_Pattern(uint64_t b, int labels, char* board);
+char* formatTranscript(int* transcript, int labels, int color, char* board);
 
 #define DO_FLIP 1
+//#define DO_TRANSCRIPT 1
 
 // TODO:
 // implement node structure
@@ -112,7 +116,7 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 	f |= (e & v);
 	
 	/////////////////////////////////
-	// up
+	// up	
 	v = me;
 	v >>= 8;		// 1.
 	v &= op;
@@ -133,109 +137,110 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 	v &= op;
 	v >>= 8;		// 7.
 	f |= (e & v);
-
+	
 	/////////////////////////////////
-	// right
+	// right		
 	v = me;
 	v <<= 1;		// 1.
-	v &= NotH1H8;
+	v &= NotEDGE;
 	v &= op;
-	v <<= 1;		// 2.
-	v &= NotH1H8;
+	v <<= 1;		// 2.	
 	f |= e & v;
+	v &= NotEDGE;
 #pragma __unroll
 	for(int a = 0; a<5; a++){
 		v &= op;
-		v <<= 1;		// 3-7
-		v &= NotH1H8;
+		v <<= 1;		// 3-7		
 		f |= (e & v);
+		v &= NotEDGE;
 	}
 	
 	/////////////////////////////////
 	// left
+	
 	v = me;
-	v >>= 1;		// 1.
-	v &= NotA1A8;
+	v >>= 1;		// 1.	
+	v &= NotEDGE;
 	v &= op;
-	v >>= 1;		// 2.
-	v &= NotA1A8;
-	f |= e & v;
+	v >>= 1;		// 2.	
+	f |= (e & v);
+	v &= NotEDGE;
 #pragma __unroll
 	for(int a = 0; a<5; a++){
 		v &= op;
-		v >>= 1;		// 3-7
-		v &= NotA1A8;
+		v >>= 1;		// 3-7		
 		f |= (e & v);
+		v &= NotEDGE;
 	}
-
+	
 	/////////////////////////////////
 	// left-up
 	v = me;
 	v >>= 9;		// 1.
-	v &= NotA1A8;
+	v &= NotEDGE;
 	v &= op;
 	v >>= 9;		// 2.
-	v &= NotA1A8;
 	f |= (e & v);
+	v &= NotEDGE;
 #pragma __unroll
 	for(int a = 0; a<5; a++){
 		v &= op;
 		v >>= 9;		// 3-7
-		v &= NotA1A8;
 		f |= (e & v);
+		v &= NotEDGE;
 	}
 	
 	/////////////////////////////////
 	// right-up
 	v = me;
 	v >>= 7;		// 1.
-	v &= NotA1A8;
+	v &= NotEDGE;
 	v &= op;
-	v >>= 7;		// 2.
-	v &= NotA1A8;
-	f |= e & v;
+	v >>= 7;		// 2.	
+	f |= (e & v);
+	v &= NotEDGE;
 #pragma __unroll
 	for(int a = 0; a<5; a++){
 		v &= op;
-		v >>= 7;		// 3-7
-		v &= NotA1A8;
+		v >>= 7;		// 3-7		
 		f |= (e & v);
+		v &= NotEDGE;
 	}
-
+	
 	/////////////////////////////////
 	// left-down
 	v = me;
 	v <<= 7;		// 1.
-	v &= NotA1A8;
+	v &= NotEDGE;
 	v &= op;
 	v <<= 7;		// 2.
-	v &= NotA1A8;
-	f |= e & v;
+	f |= (e & v);
+	v &= NotEDGE;
 #pragma __unroll
 	for(int a = 0; a<5; a++){
 		v &= op;
 		v <<= 7;		// 3-7
-		v &= NotA1A8;
 		f |= (e & v);
+		v &= NotEDGE;
 	}
-
+	
 	/////////////////////////////////
 	// right-down
 	v = me;
 	v <<= 9;		// 1.
-	v &= NotA1A8;
+	v &= NotEDGE;
 	v &= op;
 	v <<= 9;		// 2.
-	v &= NotA1A8;
-	f |= e & v;
+	f |= (e & v);
+	v &= NotH1H8;
 #pragma __unroll
 	for(int a = 0; a<5; a++){
 		v &= op;
 		v <<= 9;		// 3-7
-		v &= NotA1A8;
 		f |= (e & v);
+		v &= NotEDGE;
 	}
-
+	
 	board[0].x |= f;
 	board[0].y |= f;
 	
@@ -306,88 +311,101 @@ __device__	__inline__ uint64_t verticalPattern(int x, unsigned int xorPattern) {
 	return pattern;
 }
 
-__device__	__inline__ uint64_t flipDiagonalUp(uint64_t me, uint64_t opp, int x, int y) {
-	unsigned short dnr = x+y;
-	unsigned short over = __max(7u, dnr);
-	unsigned short under = __min(7u, dnr);
-	uint64_t me2 =  me  >> ((over - 7u ) << 3 );
-	me2 <<= ((7u - under) << 3 );
-	uint64_t opp2 =  opp  >> ((over - 7u ) << 3 );
-	opp2 <<= ((7u - under) << 3 );
+__device__	__inline__ uint64_t flipDiagonalDownRight(uint64_t me, uint64_t opp, uint64_t location) {
+	uint64_t v = location;	
+	uint64_t flipped = 0ULL;
+	uint64_t ok = 0ULL;
 
-	uint64_t i = 128ULL;	
-	uint64_t s = 1ULL << 7;	
-	unsigned int lineMe = 0u;
-	unsigned int lineOpp = 0u;
-
-#pragma unroll
-	for(short a = 0; a<8; a++){				
-		lineMe  |= (unsigned int) (__min( (me2 & s), i));
-		lineOpp |= (unsigned int) (__min( (opp2 & s), i));
-		i >>= 1;
-		s <<=7;			
-	}
-
-	unsigned int flipped = flipLeft(x, lineMe, lineOpp) | 		 
-						   flipRight(x, lineMe, lineOpp);
-	
-	i = 128ULL;	
-	s = 1ULL << 7;
-	uint64_t pattern = 0ULL;
-	for(short a = 0; a<8; a++){
-		pattern |= flipped & i ? s : 0ULL;
-		i >>= 1;
-		s <<= 7;
-	}
-	
-	pattern <<= ((over - 7u ) << 3 );
-	pattern >>= ((7u - under) << 3 );
-
-	return pattern;
+	v <<= 9;		// 1.
+	v &= NotEDGE;
+	v &= opp;
+	flipped |= v;
+	v <<= 9;		// 2.
+#pragma __unroll
+	for (int a = 0; a < 5; a++){		
+		ok |= (me & v);
+		v &= NotEDGE;
+		v &= opp;
+		flipped |= v;		
+		v <<= 9;		// 3-7		
+	}	
+	ok |= (me & v);		// 8.
+	return ok == 0ULL ? 0ULL : flipped;
 }
 
-__device__	__inline__ uint64_t flipDiagonalDown(uint64_t me, uint64_t opp, int x, int y) {
-	unsigned short dnr = x + 7u - y;
-	unsigned short over = __max(7u, dnr);
-	unsigned short under = __min(7u, dnr);
-	uint64_t me2 =  me  << ((over - 7u ) << 3 );
-	me2 >>= ((7u - under) << 3 );
-	uint64_t opp2 =  opp  << ((over - 7u ) << 3 );
-	opp2 >>= ((7u - under) << 3 );
+__device__	__inline__ uint64_t flipDiagonalDownLeft(uint64_t me, uint64_t opp, uint64_t location) {
+	uint64_t v = location;
+	uint64_t flipped = 0ULL;
+	uint64_t ok = 0ULL;
 
-	uint64_t i = 1ULL;	
-	uint64_t s = 1ULL;	
-	unsigned int lineMe = 0u;
-	unsigned int lineOpp = 0u;
-
-#pragma unroll
-	for(short a = 0; a<8; a++){				
-		lineMe  |= (unsigned int) (__min( (me2 & s), i));
-		lineOpp |= (unsigned int) (__min( (opp2 & s), i));
-		i <<= 1;
-		s <<=9;			
+	v <<= 7;		// 1.
+	v &= NotEDGE;
+	v &= opp;
+	flipped |= v;
+	v <<= 7;		// 2.	
+#pragma __unroll
+	for (int a = 0; a < 5; a++){
+		ok |= (me & v);
+		v &= NotEDGE;
+		v &= opp;
+		flipped |= v;
+		v <<= 7;		// 3-7		
 	}
+	ok |= (me & v);		// 8.	
+	return ok == 0ULL ? 0ULL : flipped;
+}
 
-	unsigned int flipped = flipLeft(x, lineMe, lineOpp) | 		 
-						   flipRight(x, lineMe, lineOpp);
+__device__	__inline__ uint64_t flipDiagonalDown(uint64_t me, uint64_t opp, uint64_t location) {
+	return flipDiagonalDownLeft(me, opp, location) | flipDiagonalDownRight(me, opp, location);	
+}
 
-	unsigned v = 1u;	
-	s = 1ULL;
-	uint64_t pattern = 0ULL;
 
-#pragma unroll	
-	for(short a = 0; a<8; a++){
-		unsigned int t = (flipped & v) >> a;
-		i = s * t;		
-		pattern |= i;
-		v <<= 1;
-		s <<= 9;
+__device__	__inline__ uint64_t flipDiagonalUpRight(uint64_t me, uint64_t opp, uint64_t location) {
+	uint64_t v = location;
+	uint64_t flipped = 0ULL;
+	uint64_t ok = 0ULL;
+
+	v >>= 7;		// 1.
+	v &= NotEDGE;
+	v &= opp;
+	flipped |= v;
+	v >>= 7;		// 2.
+#pragma __unroll
+	for (int a = 0; a < 5; a++){
+		ok |= (me & v);
+		v &= NotEDGE;
+		v &= opp;
+		flipped |= v;
+		v >>= 7;		// 3-7		
 	}
-	
-	pattern >>= ((over - 7u ) << 3 );
-	pattern <<= ((7u - under) << 3 );
-	
-	return pattern;
+	ok |= (me & v);		// 8.
+	return ok == 0ULL ? 0ULL : flipped;
+}
+
+__device__	__inline__ uint64_t flipDiagonalUpLeft(uint64_t me, uint64_t opp, uint64_t location) {
+	uint64_t v = location;
+	uint64_t flipped = 0ULL;
+	uint64_t ok = 0ULL;
+
+	v >>= 9;		// 1.
+	v &= NotEDGE;
+	v &= opp;
+	flipped |= v;
+	v >>= 9;		// 2.	
+#pragma __unroll
+	for (int a = 0; a < 5; a++){
+		ok |= (me & v);
+		v &= NotEDGE;
+		v &= opp;
+		flipped |= v;
+		v >>= 9;		// 3-7		
+	}
+	ok |= (me & v);		// 8.	
+	return ok == 0ULL ? 0ULL : flipped;
+}
+
+__device__	__inline__ uint64_t flipDiagonalUp(uint64_t me, uint64_t opp, uint64_t location) {
+	return flipDiagonalUpLeft(me, opp, location) | flipDiagonalUpRight(me, opp, location);
 }
 
 /************************************************************************************
@@ -437,6 +455,9 @@ __device__ __inline__ int option(ulonglong2* positions, ulonglong2* result, int 
 	boardOpp ^= location;
 	
 	int bitNr = selectOption(location);
+	if (bitNr == 0){
+		return 0;
+	}
 	bitNr--;
 	int x = bitNr & 7;
 	int y = bitNr >> 3;
@@ -446,8 +467,8 @@ __device__ __inline__ int option(ulonglong2* positions, ulonglong2* result, int 
 	
 	xorPattern |= horizontalPattern(y, flipHorizontal(boardMe, boardOpp, x, yHigh));
 	xorPattern |= verticalPattern(x, flipVertical(boardMe, boardOpp, x, y));
-	xorPattern |= flipDiagonalUp(boardMe, boardOpp, x, y);
-	xorPattern |= flipDiagonalDown(boardMe, boardOpp, x, y);	
+	xorPattern |= flipDiagonalUp(boardMe, boardOpp, 1ULL << bitNr);	
+	xorPattern |= flipDiagonalDown(boardMe, boardOpp, 1ULL << bitNr); 
 
 
 	if (xorPattern){		
@@ -463,7 +484,7 @@ __device__ __inline__ int option(ulonglong2* positions, ulonglong2* result, int 
 		getLegalMoves(&result[globalIdx], isWhiteToPlay ^ 1);
 	}
 
-	return bitNr;
+	return bitNr + 1;
 }
 
 /************************************************************************************
@@ -472,22 +493,27 @@ __device__ __inline__ int option(ulonglong2* positions, ulonglong2* result, int 
  * TODO: count disc differance at end of game. Store value in node. Use alpha-beta pruning
  *
  ************************************************************************************/
-__global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, int depth)
+__global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, int depth, int* transcript)
 {	   
 	int endOfGame = 0;
 	int globalIdx = blockIdx.x * blockDim.x + threadIdx.x;
 
-	for(int a=0; a< depth ; a++){
+	for(int a=0; a < depth ; a++){
 		int chosenMove = option(positions, result, isWhiteToPlay);
+		isWhiteToPlay ^= 1;
 		if (chosenMove!=0){
-			positions = result;
-			isWhiteToPlay ^= 1;
+			positions = result;			
+			endOfGame = 0;
+#ifdef DO_TRANSCRIPT
+			transcript[chosenMove-1] = a +1;
+#endif
 		}else{
 			// pass
-			endOfGame++;
-			if (endOfGame>1) break;			
+			endOfGame++;			
+			if (endOfGame>1) break;
+			getLegalMoves(&positions[globalIdx], isWhiteToPlay);
 			a--;
-		}
+		}		
 	}
 	int diffForBlack = __popcll(positions[globalIdx].y) - __popcll(positions[globalIdx].x);
 }
@@ -531,6 +557,8 @@ int testKernel(int streams, int device, int depth)
 	ulonglong2* dPositions[MAX_STREAMS];
 	ulonglong2* hFlipped[MAX_STREAMS];
 	ulonglong2* dFlipped[MAX_STREAMS];
+	int* hTranscript[MAX_STREAMS];
+	int* dTranscript[MAX_STREAMS];
 
     // Allocate host and device memory
 	for(int i = 0; i < streams; i++){
@@ -543,6 +571,10 @@ int testKernel(int streams, int device, int depth)
 		onErrorExit("memory", error, __LINE__);
 		memset(hFlipped[i], 0, sizeof(ulonglong2) * streamSize);
 
+		error = cudaMallocHost((void **)&hTranscript[i], sizeof(int) * streamSize * 64);
+		onErrorExit("memory", error, __LINE__);
+		memset(hTranscript[i], 0, sizeof(int) * streamSize * 64);
+
 		//printf("Init positions... stream %d\n",i);
 		initPositions(hPositions[i], streamSize);
 
@@ -551,6 +583,10 @@ int testKernel(int streams, int device, int depth)
 
 		error = cudaMalloc((void **) &dFlipped[i], sizeof(ulonglong2) * streamSize);
 		onErrorExit("memory", error, __LINE__);
+
+		error = cudaMalloc((void **)&dTranscript[i], sizeof(int) * streamSize * 64);
+		onErrorExit("memory", error, __LINE__);
+
 	}    
 
     //printf("Invoke CUDA Kernel...\n");
@@ -571,17 +607,27 @@ int testKernel(int streams, int device, int depth)
 		error = cudaMemcpyAsync(dPositions[i], hPositions[i], sizeof(ulonglong2) * streamSize, cudaMemcpyHostToDevice, stream[i]);
 		onErrorExit("memory", error, __LINE__);
 	
-		play<<< grid, threads, 0, stream[i] >>>(dPositions[i], dFlipped[i], 0, depth);
+		play<<< grid, threads, 0, stream[i] >>>(dPositions[i], dFlipped[i], 0, depth, dTranscript[i]);
 
 		// Copy result from device to host
 #ifdef DO_FLIP
 		// Copy resulting black&white positions
 		error = cudaMemcpyAsync(&hPositions[i][streamSize], &dPositions[i][streamSize], sizeof(ulonglong2) * streamSize, cudaMemcpyDeviceToHost, stream[i]);
-#else
-		// Copy only xor patterns
-		// error = cudaMemcpyAsync(hFlipped[i], dFlipped[i], sizeof(uint64_t) * streamSize , cudaMemcpyDeviceToHost, stream[i]);
+		onErrorExit("memory", error, __LINE__);
 #endif
+		
+#ifdef DO_TRANSCRIPT
+		// FIX-ME: Won't work with multiple streams...
+		error = cudaMemcpyAsync(&hTranscript[i][0], &dTranscript[i][0], sizeof(int) * streamSize * 64, cudaMemcpyDeviceToHost, stream[i]);
+		onErrorExit("memory", error, __LINE__);
+#endif
+
+
+#ifndef DO_FLIP
+		// Copy only xor patterns
+		error = cudaMemcpyAsync(hFlipped[i], dFlipped[i], sizeof(uint64_t) * streamSize , cudaMemcpyDeviceToHost, stream[i]);
 		onErrorExit("memory", error, __LINE__);				
+#endif
 	}
 
 	for(int i=0; i < streams; i++){
@@ -592,14 +638,22 @@ int testKernel(int streams, int device, int depth)
 	long long endTime = (long long)(time.wMinute * 60 * 1000 + time.wSecond * 1000 + time.wMilliseconds);
 	long long endMs = endTime - startMs;
 	
-	char board[500];
+	char board[4000];
 	for(int i=0; i < streams; i++){
+		// Prepare print-buffer// Prepare print-buffer
 		board[0] = 0;
-//		printf("Before %d\n%s\n", i, toBoard(hPositions[i][0], 1, 0, board));
-		board[0] = 0;
+		printf("Before %d\n%s\n", i, toBoard(hPositions[i][0], 1, 0, board));
 #ifdef DO_FLIP
-		printf("After %d\n%s\n", i, toBoard(hFlipped[i][0], 1, 0, board));
-#else
+		// Prepare print-buffer		
+		board[0] = 0;
+		printf("After %d\n%s\n", i, toBoard(hFlipped[i][0], 1, 0, board));		
+		
+#endif
+#ifdef DO_TRANSCRIPT
+		// Prepare print-buffer		
+		board[0] = 0;
+		printf("Transcript %d:\n%s\n", i, formatTranscript(hTranscript[i], 1, 0, board));
+
 //		printf("After %d\n%s\n", i, toBoard_Pattern(hFlipped[i][0], 1, board));		
 #endif
 	}
@@ -621,6 +675,8 @@ int testKernel(int streams, int device, int depth)
 		error = cudaFree(dPositions[i]);
 		onErrorExit("memory", error, __LINE__);
 		error = cudaFree(dFlipped[i]);
+		onErrorExit("memory", error, __LINE__);
+		error = cudaFree(dTranscript[i]);
 		onErrorExit("memory", error, __LINE__);
 		error = cudaStreamDestroy(stream[i]);
 		onErrorExit("destroy stream", error, __LINE__);

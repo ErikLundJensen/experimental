@@ -18,14 +18,36 @@ char* testBoard[] = {	"X    X  " , //1
 						"    OOO " , //7
 						"   X X X"  }; //8
 */
-char* testBoard[] = {	"        " , //1		
-					    "        " , //2
-						"        " , //3
-						"   OX   " , //4
-						"   XO   " , //5
-						"        " , //6
-						"        " , //7
+/*
+char* testBoard[] = {	"       X" , //1		
+					    " OOOOOXX" , //2
+						"XXXXOOXX" , //3
+						"XOOOXOXX" , //4
+						"XOOOOOXX" , //6
+						"XOOOOOXX" , //5
+						"     O  " , //7
 						"        "  }; //8
+*/
+char* testBoard[] = { "        ", //1		
+					  "        ", //2
+					  "        ", //3
+					  "   OX   ", //4
+					  "   XO   ", //5
+					  "        ", //6
+					  "        ", //7
+					  "        " }; //8
+
+
+/*
+char* testBoard[] = { "        ", //1		
+					  "        ", //2
+					  "  XO X  ", //3
+					  " XXXXXO ", //4
+					  "XOXXXXX ", //5
+					  "O O     ", //6
+					  "        ", //7
+					  "        " }; //8
+*/
 
 uint64_t getBoard(char* board, char c);
 char* toBoard(ulonglong2 b, int labels, int color, char* board);
@@ -151,4 +173,28 @@ char* toRow(unsigned int r, int color, char row[]){
 		}
 	}
 	return row;
+}
+
+char* formatTranscript(int* transcript, int labels, int color, char* board){
+	if (labels){
+		strcat(board, "  ------------------------\n");
+		strcat(board, " |A |B |C |D |E |F |G |H |");
+	}
+
+	for (int i = 0; i < 64; i++){
+		if ((i % 8) == 0 && labels){
+			strcat(board, "\n");
+			strcat(board, " |--+--+--+--+--+--+--+--|\n");
+			strcat(board, numbers[i / 8]);			
+			strcat(board, "|");
+		}
+		char buffer[50];
+		sprintf(buffer, "%2d|", transcript[i]);
+		strcat(board, buffer);		
+	}
+	if (labels){
+		strcat(board, "\n");
+		strcat(board, " -------------------------\n");
+	}
+	return board;
 }
