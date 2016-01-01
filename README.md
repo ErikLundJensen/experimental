@@ -15,7 +15,7 @@ The invocation of copy is included in the performance benchmark.
 The test setup runs through from start position to end-of-game (including handling pass).
 
 The result of the performance test is:
-<B>2.8 giga moves per second</B> (where "move" is defined as step 1-5 above)
+<B>2.8 giga moves per second</B> (where "move" is defined as above)
 
 Running at overclocked watercooled NVIDIA Geforce GTX 690.
 
@@ -33,7 +33,7 @@ One way to optimize the algorithm could be to lower the latency by using multipl
 GPU-side alpha beta pruning is a must to get any benefit of the speed of the GPU.
 
 Looking into the next generation of NVIDIA products (Pascal architecture) GPU memory will be even faster and come in sizes up to 16GB. This indeed points to the direction of implementing alpha beta pruning in CUDA.
-A simple implementation of the alpha beta pruning which does not take advantage of the massive parallelizme will still be faster than copying the positions to host memory.
+A simple implementation of the alpha beta pruning which does not take advantage of the massive parallelisme will still be faster than copying the positions to host memory.
 
 
 Copyright notes:
