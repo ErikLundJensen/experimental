@@ -9,17 +9,31 @@ g2flip is a CUDA implementation of Othello board game. The implementation covers
 3) Flip discs<br>
 4) Count the number of dics if end-of-game<br>
 
+Before each game the initial positions is copied to the GPU memory. After end-of-game copy resulting positions or transcript to host memory (regular CPU managed memory)
+The invocation of copy is included in the performance benchmark.
+
 The test setup runs through from start position to end-of-game (including handling pass).
 
 The result of the performance test is:
-1.17 giga moves per second (where "move" is defined as above)
+<B>2.8 giga moves per second</B> (where "move" is defined as step 1-5 above)
 
 Running at overclocked watercooled NVIDIA Geforce GTX 690.
 
+The latest gain (from 1.17G moves/s to 2.8G moves/s) came from simplification of algorithm for flipping discs -- the cost was addition memory usage (64 bytes from the stack).
+The current source/implementation does not look like a real optimization for the GPU, as it contains a lot of branching, however, the implementation is anyhow real fast.
+
 It is quite problematic to combine this implementation with existing Othello programs running on CPU, as the amount of data is hard to get through the PCI bus.
-Calculating 20 bytes per position gives 23 GB/s in and out which is beyond the current speed of PCI 3.0 x16.
+Calculation given by 20 bytes per position gives 56 GB/s in and out which is beyond the current speed of PCI 3.0 x16.
 
 One solution to this limitation is running the alpha-beta pruning at the GPU using CUDA, however, that is a complex task as branching is bad for the GPU.
+Launching a Cuda kernel for just a few moves or positions has a large overhead (minimum 16ms om GTX 295). The current implementation handles 2 million positions in parallel to get to the maxium speed at the GTX 690.
+
+One way to optimize the algorithm could be to lower the latency by using multiple threads per position. This requires that 8 threads is handling the same position which leads to some syncronization of the threads and will be a quite complex implementation. This could lead to a lower overall through-put, however, the latency will be decreased.
+
+GPU-side alpha beta pruning is a must to get any benefit of the speed of the GPU.
+
+Looking into the next generation of NVIDIA products (Pascal architecture) GPU memory will be even faster and come in sizes up to 16GB. This indeed points to the direction of implementing alpha beta pruning in CUDA.
+A simple implementation of the alpha beta pruning which does not take advantage of the massive parallelizme will still be faster than copying the positions to host memory.
 
 
 Copyright notes:
