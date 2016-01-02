@@ -17,7 +17,7 @@
 // Select CUDA device type
 #define gtx295 1
 
-#define ITERATIONS 100
+#define ITERATIONS 10
 
 // Early break in loops increases throughput by 17% even though threads gets more diverted
 #define earlybreak 1
@@ -26,10 +26,10 @@
 //#define usefloat 1
 
 // Copy result after each game iteration
-//#define COPY_RESULT_TO_HOST 1
+#define COPY_RESULT_TO_HOST 1
 
 // Print transcript from one of the played games
-//#define DO_TRANSCRIPT 1
+#define DO_TRANSCRIPT 1
 
 #ifdef gtx295
 // Actual thread number
@@ -43,7 +43,7 @@
 #define DEFAULT_DEPTH 60
 
 #define MAX_STREAMS 2
-#define MAX_DEVICES 2
+#define MAX_DEVICES 1
 
 // Parameters used for switching between float and int for counters
 #ifdef usefloat
@@ -66,18 +66,10 @@
 #define counter int
 #endif
 
-#define DIR_DOWN 0
-#define DIR_UP 1
-#define DIR_LEFT 2
-#define DIR_RIGHT 3
-#define DIR_LEFTDOWN 4
-#define DIR_LEFTUP 5
-#define DIR_RIGHTDOWN 6
-#define DIR_RIGHTUP 7
-
 const uint64_t NotA1A8 = 18374403900871474942ULL;
 const uint64_t NotH1H8 = 9187201950435737471ULL;
 const uint64_t NotEDGE = NotH1H8 & NotA1A8;
+__constant__ const int DIRECTIONS[] = { -9, -8, -7, -1, 1, 7, 8, 9 };
 
 void initPositions(ulonglong2* p,int numberOfPositions);
 
@@ -134,158 +126,60 @@ uint64_t getNotA1A8(){
 	return ~v;
 }
 
+__device__ uint64_t getLegalMoves(int direction, uint64_t e, uint64_t me, uint64_t op){
+	uint64_t v;		// temp variable	
+	uint64_t xor_pattern = 0ULL;
+
+	int d = abs(direction);
+	v = me;
+	if (direction < 0) {
+		v <<= d;
+	}else{
+		v >>= d;
+	}
+	if (d != 8) v &= NotEDGE;
+	if (d == 1) v &= NotH1H8;
+#pragma __unroll
+	for (int a = 0; a < 6; a++){
+		v &= op;
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		if (direction < 0) {
+			v <<= d;
+		}
+		else{
+			v >>= d;
+		}
+
+		xor_pattern |= (e & v);
+		if (d != 8) v &= NotEDGE;
+	}
+	return xor_pattern;
+}
+
 /************************************************************************************
  *
  *	Find legal moves and store them in options array
  *
  ************************************************************************************/
-__device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay, uint64_t *options){
+__device__ void getLegalAllMoves(ulonglong2 *board, int isWhiteToPlay, uint64_t *options){
 	uint64_t me;
 	uint64_t op;
-
-	// Clear options
-#pragma __unroll
-	for(int a = 0; a<8; a++){
-		options[a] = 0LL;
-	}
 
 	if (isWhiteToPlay){
 		me = board[0].y;
 		op = board[0].x;
-	}else{		
+	}
+	else{
 		op = board[0].y;
 		me = board[0].x;
-	}	
+	}
+	uint64_t e = ~(me | op);
 
-	uint64_t e;		// empty fields
-	uint64_t v;		// temp variable	
-	e = ~(me | op);
-	/////////////////////////////////
-	// down
-	v = me;
-	v <<= 8;		// 1.
-#pragma __unroll
-	for (int a = 0; a < 6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v <<= 8;		// 2-7
-		options[DIR_DOWN] |= (e & v);
+	for (int a = 0; a < 8; a++){
+		options[a] = getLegalMoves(DIRECTIONS[a], e, me, op);
 	}
-	
-	/////////////////////////////////
-	// up	
-	v = me;
-	v >>= 8;		// 1.
-#pragma __unroll
-	for (int a = 0; a < 6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v >>= 8;
-		options[DIR_UP] |= (e & v);
-	}
-	
-	
-	/////////////////////////////////
-	// right		
-	v = me;
-	v <<= 1;		// 1.
-	v &= NotEDGE;
-#pragma __unroll
-	for(int a = 0; a<6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v <<= 1;		// 2-7		
-		options[DIR_RIGHT] |= (e & v);
-		v &= NotEDGE;
-	}
-	
-	/////////////////////////////////
-	// left
-	
-	v = me;
-	v >>= 1;		// 1.	
-	v &= NotEDGE;
-#pragma __unroll
-	for(int a = 0; a<6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v >>= 1;		// 2-7		
-		options[DIR_LEFT] |= (e & v);
-		v &= NotEDGE;
-	}
-	
-	/////////////////////////////////
-	// left-up
-	v = me;
-	v >>= 9;		// 1.
-	v &= NotEDGE;
-#pragma __unroll
-	for(int a = 0; a<6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v >>= 9;		// 2-7
-		options[DIR_LEFTUP] |= (e & v);
-		v &= NotEDGE;
-	}
-	
-	/////////////////////////////////
-	// right-up
-	v = me;
-	v >>= 7;		// 1.
-	v &= NotEDGE;
-#pragma __unroll
-	for(int a = 0; a<6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v >>= 7;		// 2-7		
-		options[DIR_RIGHTUP] |= (e & v);
-		v &= NotEDGE;
-	}
-	
-	/////////////////////////////////
-	// left-down
-	v = me;
-	v <<= 7;		// 1.
-	v &= NotEDGE;
-#pragma __unroll
-	for(int a = 0; a<6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v <<= 7;		// 2-7
-		options[DIR_LEFTDOWN] |= (e & v);
-		v &= NotEDGE;
-	}
-	
-	/////////////////////////////////
-	// right-down
-	v = me;
-	v <<= 9;		// 1.
-	v &= NotEDGE;	
-#pragma __unroll
-	for(int a = 0; a<6; a++){
-		v &= op;
-#ifdef earlybreak
-		if (v == 0) break;
-#endif
-		v <<= 9;		// 2-7
-		options[DIR_RIGHTDOWN] |= (e & v);
-		v &= NotEDGE;
-	}
-	return;
 }
 
 /************************************************************************************
@@ -313,21 +207,42 @@ __device__ __inline__ int selectOption(uint64_t options){
 }
 
 
+__device__ uint64_t flip(int direction, uint64_t location, uint64_t option, uint64_t boardOpp){
+	uint64_t xorPattern = 0ULL;
+	uint64_t d = abs(direction);
+	if (option & location){
+		uint64_t v = location;
+#pragma __unroll
+		for (int a = 0; a < 6; a++){
+			if (direction > 0) {
+				v <<= d;
+			}
+			else{
+				v >>= d;
+			}
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}
+	return xorPattern;
+}
 
-__device__ __inline__ int makeMove(int globalIdx, ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, uint64_t *options){
+
+__device__ int makeMove(int globalIdx, ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, uint64_t *options){
 	uint64_t location = 0LL;
 #pragma __unroll
-   	for(int a = 0; a<8; a++){
-   		location |= options[a];
-   	}
+	for (int a = 0; a < 8; a++){
+		location |= options[a];
+	}
 
 	if (location == 0ULL) return 0;
 
 	uint64_t boardOpp;
-	
-	if (isWhiteToPlay){		
+
+	if (isWhiteToPlay){
 		boardOpp = positions[globalIdx].x;
-	}else{		
+	}
+	else{
 		boardOpp = positions[globalIdx].y;
 	}
 
@@ -337,94 +252,18 @@ __device__ __inline__ int makeMove(int globalIdx, ulonglong2* positions, ulonglo
 	}
 	bitNr--;
 	location = 1ULL << bitNr;
-
-	uint64_t xorPattern = 0LL;
-	if (options[DIR_UP] & location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v <<= 8;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;			
-		}
+	uint64_t xorPattern = 0ULL;
+	for (int a = 0; a < 8; a++){
+		xorPattern |= flip(DIRECTIONS[a], location, options[a], boardOpp);
 	}
-
-	if (options[DIR_DOWN] & location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v >>= 8;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;
-		}
-	}
-
-	if (options[DIR_LEFT] & location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v <<= 1;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;
-		}
-	}
-
-	if (options[DIR_RIGHT]& location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v >>= 1;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;
-		}
-	}
-
-	if (options[DIR_LEFTUP] & location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v <<= 9;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;
-		}
-	}
-
-	if (options[DIR_LEFTDOWN] & location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v >>= 7;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;
-		}
-	}
-
-	if (options[DIR_RIGHTUP] & location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v <<= 7;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;
-		}
-	}
-	if (options[DIR_RIGHTDOWN] & location){
-		uint64_t v = location;
-#pragma __unroll
-		for(int a=0; a<6; a++){
-			v >>= 9;
-			if (!(boardOpp & v)) break;
-			xorPattern ^= v;
-		}
-	}		
-
 	result[globalIdx].x = positions[globalIdx].x ^ xorPattern;
 	result[globalIdx].y = positions[globalIdx].y ^ xorPattern;
 
-	if (isWhiteToPlay){				
+	if (isWhiteToPlay){
 		result[globalIdx].y |= location;
-	}else{
-		result[globalIdx].x |= location;		
+	}
+	else{
+		result[globalIdx].x |= location;
 	}
 
 	return bitNr + 1;
@@ -448,7 +287,7 @@ __global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPla
 
 	uint64_t options[8];
 	for(counter a=zero; a < depth ; a++){
-		getLegalMoves(&positions[globalIdx], isWhiteToPlay, options);
+		getLegalAllMoves(&positions[globalIdx], isWhiteToPlay, options);
 		int chosenMove = makeMove(globalIdx, positions, result, isWhiteToPlay, options);
 		isWhiteToPlay ^= 1;
 		if (chosenMove!=0){
@@ -652,7 +491,7 @@ int main(int argc, char **argv)
 
 	HANDLE threadHandles[MAX_DEVICES];
 
-	int devices = 2;
+	int devices = 1;
 	int nowait = 0;
 
 	for (int i = 1; i < argc; i++){
