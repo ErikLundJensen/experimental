@@ -1,6 +1,27 @@
 experimental
 ============
 
+This branch of the code tests parallel flipping of discs in all 8 directions. This version puts 8 threads in each block which is far from optimal, however, it eases the synchronization between threads.
+
+This variation runs up to 400 mill moves/s on gtx 690.
+
+Tested at the slower GTX 295 we get a lower latency:
+The lattency has dropped to 125 ns for making 2 moves in one game. Playing 10 moves takes 219 ns and a full game 704 ns. (Note we are talking nano seconds here)
+The overhead of starting the kernel is around 125 ns and 9 ns for each move.
+
+Starting 32K games with 2  moves give 0.05 ns per move.
+Starting 32K games with 60 moves give 0.0066 ns per move. (149m/s)
+
+The price for getting lower latency is reducing the overall through-put.
+Optimizing the implementation to play more moves per thread block complicates the sharing of states, however, it would improve through-put without increasing latency.
+
+
+----
+
+
+
+
+
 Experimental code
 
 g2flip is a CUDA implementation of Othello board game. The implementation covers:<br>

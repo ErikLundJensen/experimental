@@ -17,7 +17,7 @@
 // Select CUDA device type
 #define gtx295 1
 
-#define ITERATIONS 10
+#define ITERATIONS 100
 
 // Early break in loops increases throughput by 17% even though threads gets more diverted
 #define earlybreak 1
@@ -29,15 +29,15 @@
 #define COPY_RESULT_TO_HOST 1
 
 // Print transcript from one of the played games
-#define DO_TRANSCRIPT 1
+//#define DO_TRANSCRIPT 1
 
 #ifdef gtx295
 // Actual thread number
-#define BLOCK_SIZE 128
-#define GRID_SIZE 2048
+#define BLOCK_SIZE 8
+#define GRID_SIZE 32768
 #else
-#define BLOCK_SIZE 256
-#define GRID_SIZE 4096
+#define BLOCK_SIZE 8
+#define GRID_SIZE 65536
 #endif
 
 #define DEFAULT_DEPTH 60
@@ -66,8 +66,13 @@
 #define counter int
 #endif
 
+#define IS_MASTER if (threadIdx.x == 1)
+
+// Left edge
 const uint64_t NotA1A8 = 18374403900871474942ULL;
+// Right edge
 const uint64_t NotH1H8 = 9187201950435737471ULL;
+// No side edges
 const uint64_t NotEDGE = NotH1H8 & NotA1A8;
 __constant__ const int DIRECTIONS[] = { -9, -8, -7, -1, 1, 7, 8, 9 };
 
@@ -126,7 +131,7 @@ uint64_t getNotA1A8(){
 	return ~v;
 }
 
-__device__ uint64_t getLegalMoves(int direction, uint64_t e, uint64_t me, uint64_t op){
+__device__ __inline__ uint64_t getLegalMoves(int direction, uint64_t e, uint64_t me, uint64_t op){
 	uint64_t v;		// temp variable	
 	uint64_t xor_pattern = 0ULL;
 
@@ -135,10 +140,9 @@ __device__ uint64_t getLegalMoves(int direction, uint64_t e, uint64_t me, uint64
 	if (direction < 0) {
 		v <<= d;
 	}else{
-		v >>= d;
+		v >>= d;	
 	}
-	if (d != 8) v &= NotEDGE;
-	if (d == 1) v &= NotH1H8;
+	if (d != 8) v &= NotEDGE;	
 #pragma __unroll
 	for (int a = 0; a < 6; a++){
 		v &= op;
@@ -152,7 +156,7 @@ __device__ uint64_t getLegalMoves(int direction, uint64_t e, uint64_t me, uint64
 			v >>= d;
 		}
 
-		xor_pattern |= (e & v);
+		xor_pattern |= (e & v);	
 		if (d != 8) v &= NotEDGE;
 	}
 	return xor_pattern;
@@ -164,22 +168,29 @@ __device__ uint64_t getLegalMoves(int direction, uint64_t e, uint64_t me, uint64
  *
  ************************************************************************************/
 __device__ void getLegalAllMoves(ulonglong2 *board, int isWhiteToPlay, uint64_t *options){
-	uint64_t me;
-	uint64_t op;
+	__shared__ uint64_t me;
+	__shared__ uint64_t op;
+	__shared__ uint64_t e;
 
-	if (isWhiteToPlay){
-		me = board[0].y;
-		op = board[0].x;
+	IS_MASTER{
+		if (isWhiteToPlay){
+			me = board[0].y;
+			op = board[0].x;
+		}
+		else{
+			op = board[0].y;
+			me = board[0].x;
+		}
+		e = ~(me | op);
 	}
-	else{
-		op = board[0].y;
-		me = board[0].x;
-	}
-	uint64_t e = ~(me | op);
+	__syncthreads();
 
-	for (int a = 0; a < 8; a++){
-		options[a] = getLegalMoves(DIRECTIONS[a], e, me, op);
+	int a = threadIdx.x & 7;
+	// Safe guard! TODO remove
+	if (a > 7){
+		a = 7;
 	}
+	options[a] = getLegalMoves(DIRECTIONS[a], e, me, op);
 }
 
 /************************************************************************************
@@ -207,7 +218,7 @@ __device__ __inline__ int selectOption(uint64_t options){
 }
 
 
-__device__ uint64_t flip(int direction, uint64_t location, uint64_t option, uint64_t boardOpp){
+__device__ __inline__ uint64_t flip(int direction, uint64_t location, uint64_t option, uint64_t boardOpp){
 	uint64_t xorPattern = 0ULL;
 	uint64_t d = abs(direction);
 	if (option & location){
@@ -229,44 +240,59 @@ __device__ uint64_t flip(int direction, uint64_t location, uint64_t option, uint
 
 
 __device__ int makeMove(int globalIdx, ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, uint64_t *options){
-	uint64_t location = 0LL;
-#pragma __unroll
-	for (int a = 0; a < 8; a++){
-		location |= options[a];
-	}
+	__shared__ uint64_t location;
+	__shared__ uint64_t boardOpp;
+	__shared__ uint64_t xorPattern[8];
+	__shared__ int bitNr;
 
-	if (location == 0ULL) return 0;
+	IS_MASTER{
+		bitNr = 0;
+		location = 0ULL;
+		for (int a = 0; a < 8; a++){
+			location |= options[a];
+		}
 
-	uint64_t boardOpp;
+		if (location != 0ULL){
+			if (isWhiteToPlay){
+				boardOpp = positions[globalIdx].x;
+			}
+			else{
+				boardOpp = positions[globalIdx].y;
+			}
 
-	if (isWhiteToPlay){
-		boardOpp = positions[globalIdx].x;
+			bitNr = selectOption(location);
+			if (bitNr > 0){				
+				location = 1ULL << (bitNr-1);
+			}
+		}
 	}
-	else{
-		boardOpp = positions[globalIdx].y;
+	__syncthreads();
+	if (location == 0ULL) return 0;	
+	
+	int a = threadIdx.x & 7;
+	// Safe guard! TODO remove
+	if (a > 7){
+		a = 7;
 	}
+	xorPattern[a] = flip(DIRECTIONS[a], location, options[a], boardOpp);
+	__syncthreads();
 
-	int bitNr = selectOption(location);
-	if (bitNr == 0){
-		return 0;
-	}
-	bitNr--;
-	location = 1ULL << bitNr;
-	uint64_t xorPattern = 0ULL;
-	for (int a = 0; a < 8; a++){
-		xorPattern |= flip(DIRECTIONS[a], location, options[a], boardOpp);
-	}
-	result[globalIdx].x = positions[globalIdx].x ^ xorPattern;
-	result[globalIdx].y = positions[globalIdx].y ^ xorPattern;
+	IS_MASTER{
+		uint64_t pattern = 0ULL;
+		for (int b = 0; b < 8; b++){
+			pattern |= xorPattern[b];
+		}
+		result[globalIdx].x = positions[globalIdx].x ^ pattern;
+		result[globalIdx].y = positions[globalIdx].y ^ pattern;
 
-	if (isWhiteToPlay){
-		result[globalIdx].y |= location;
+		if (isWhiteToPlay){
+			result[globalIdx].y |= location;
+		}
+		else{
+			result[globalIdx].x |= location;
+		}
 	}
-	else{
-		result[globalIdx].x |= location;
-	}
-
-	return bitNr + 1;
+	return bitNr;
 }
 
 __device__ __inline__ void swap(ulonglong2* p1, ulonglong2* p2){
@@ -280,31 +306,58 @@ __device__ __inline__ void swap(ulonglong2* p1, ulonglong2* p2){
  * TODO: count disc differance at end of game. Store value in node. Use alpha-beta pruning
  *
  ************************************************************************************/
-__global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, counter depth, int* transcript)
+__global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPlayParm, counter depth, int* transcript)
 {	  
-	counter endOfGame = zero;
-	int globalIdx = blockIdx.x * blockDim.x + threadIdx.x;
+	__shared__ counter endOfGame;
+	__shared__ int isWhiteToPlay;
+	__shared__ int globalIdx;
+	__shared__ uint64_t options[8];
+	__shared__ int movenr;
 
-	uint64_t options[8];
-	for(counter a=zero; a < depth ; a++){
-		getLegalAllMoves(&positions[globalIdx], isWhiteToPlay, options);
-		int chosenMove = makeMove(globalIdx, positions, result, isWhiteToPlay, options);
-		isWhiteToPlay ^= 1;
-		if (chosenMove!=0){
-			positions[globalIdx] = result[globalIdx];
-			
-			endOfGame = zero;
-#ifdef DO_TRANSCRIPT
-			transcript[chosenMove-1] = a +1;
-#endif
-		}else{
-			// pass
-			endOfGame++;			
-			if (endOfGame>one) break;
-			a--;
-		}	
+	IS_MASTER{
+		endOfGame = zero;
+		isWhiteToPlay = isWhiteToPlayParm;
+		globalIdx = blockIdx.x * blockDim.x;
+		movenr = 0;
 	}
-	int diffForBlack = __popcll(positions[globalIdx].y) - __popcll(positions[globalIdx].x);
+	__syncthreads();
+	
+	do{
+		getLegalAllMoves(&positions[globalIdx], isWhiteToPlay, options);
+		__syncthreads();
+		int chosenMove = makeMove(globalIdx, positions, result, isWhiteToPlay, options);
+
+		IS_MASTER{
+			isWhiteToPlay ^= 1;
+			if (chosenMove != 0){
+				positions[globalIdx] = result[globalIdx];
+				endOfGame = zero;
+#ifdef DO_TRANSCRIPT
+				transcript[chosenMove - 1] = movenr + 1;
+#endif
+				movenr++;
+			}
+			else{
+				// pass				
+				endOfGame++;				
+			}			
+		}
+		__syncthreads();
+		if (endOfGame > one) break;
+	} while (movenr < depth);
+	__syncthreads();
+	// Copy options to result
+	/*
+	IS_MASTER{
+		for (int a = 0; a < 8; a++){
+			result[globalIdx].x |= options[a];
+			result[globalIdx].y |= options[a];
+		}
+	}
+	*/
+	__syncthreads();
+	//int diffForBlack = __popcll(positions[globalIdx].y) - __popcll(positions[globalIdx].x);
+
 }
 
 /************************************************************************************
@@ -337,7 +390,7 @@ int testKernel(int streams, int device, int depth, int initFromFile)
 		onErrorExit("stream create", error, __LINE__);
 	}
 	
-    int numberOfPositions = block_size * GRID_SIZE;	
+    int numberOfPositions = block_size * GRID_SIZE / 8;	
 	int streamSize = numberOfPositions;
 
 	//int area = sizeof(ulonglong2) * streamSize;
@@ -407,7 +460,7 @@ int testKernel(int streams, int device, int depth, int initFromFile)
 		cudaStreamSynchronize(stream[i]);
 
 		play<<< grid, threads, 0, stream[i] >>>(dPositions[i], dFlipped[i], 0, maxDepth, dTranscript[i]);
-
+		
 		// Copy result from device to host		
 #ifdef DO_TRANSCRIPT
 		// FIX-ME: Won't work with multiple streams...
@@ -416,28 +469,28 @@ int testKernel(int streams, int device, int depth, int initFromFile)
 #endif
 
 #ifdef COPY_RESULT_TO_HOST
-		// Copy only xor patterns
-		error = cudaMemcpyAsync(hFlipped[i], dFlipped[i], sizeof(uint64_t) * streamSize , cudaMemcpyDeviceToHost, stream[i]);
+		// Copy result 
+		error = cudaMemcpyAsync(hFlipped[i], dFlipped[i], sizeof(ulonglong2) * streamSize, cudaMemcpyDeviceToHost, stream[i]);
 		onErrorExit("memory", error, __LINE__);				
 #endif
 	}
 	for(int i=0; i < streams; i++){
 		cudaStreamSynchronize(stream[i]);
-	}	
+	}
 
 	GetSystemTime(&time);
-	long long endTime = (long long)(time.wMinute * 60 * 1000 + time.wSecond * 1000 + time.wMilliseconds);
+	long long endTime = (long long)(time.wMinute * 60 * 1000 + time.wSecond * 1000 + time.wMilliseconds);	
 	long long endMs = endTime - startMs;
 	
 	char board[4000];
-	for(int i=0; i < streams; i++){
+	for (int i = 0; i < streams; i++){
 		// Prepare print-buffer// Prepare print-buffer
 		board[0] = 0;
-		printf("Before %d\n%s\n", i, toBoard(hPositions[i][10], 1, 0, board));
+		printf("Before %d\n%s\n", i, toBoard(hPositions[i][0], 1, 0, board));
 
-		// Prepare print-buffer		
+		// Prepare print-buffer	
 		board[0] = 0;
-		printf("After %d\n%s\n", i, toBoard(hFlipped[i][10], 1, 0, board));				
+		printf("After %d\n%s\n", i, toBoard(hFlipped[i][0], 1, 0, board));
 
 #ifdef DO_TRANSCRIPT
 		// Prepare print-buffer		
@@ -452,9 +505,12 @@ int testKernel(int streams, int device, int depth, int initFromFile)
 //	}
 	
 	printf("Thread end:   %ld:%ld.%ld\n", time.wMinute, time.wSecond, time.wMilliseconds);
-	double megaMovesPerSecond = ((double)(numberOfMoves / endMs)) / 1000.0;
+	double megaMovesPerSecond = 0.0;
+	if (endMs > 0){
+		megaMovesPerSecond = ((double)(numberOfMoves / endMs)) / 1000.0;
+	}
 	printf("Thread total: %ld ms\nThread: %5.3f mega moves per second\n", endMs, megaMovesPerSecond);
-
+	printf("Time per iteration: %ld ns\n", (endMs * 1000) / ITERATIONS);
 
     // Clean up memory
 	for(int i=0; i < streams; i++){
