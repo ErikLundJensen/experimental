@@ -8,6 +8,8 @@
 #include <vector_types.h>
 #include "mapper.h"
 
+// Game evaluation settings
+#define PREFER_QUITE_MOVE_CUT_OFF 35
 
 // GTX 295 configuration and mega moves per second
 //Threads Grid	Total mm / s
@@ -78,6 +80,7 @@
 const uint64_t NotA1A8 = 18374403900871474942ULL;
 const uint64_t NotH1H8 = 9187201950435737471ULL;
 const uint64_t NotEDGE = NotH1H8 & NotA1A8;
+const uint64_t FULLBOARD = 0xffffffffffffffffULL;
 
 void initPositions(ulonglong2* p,int numberOfPositions);
 
@@ -313,16 +316,17 @@ __device__ __inline__ int selectOption(uint64_t options){
 }
 
 
-
-__device__ __inline__ int makeMove(int globalIdx, ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, uint64_t *options){
+__device__ __inline__ uint64_t mergeOptions(uint64_t* options){
 	uint64_t location = 0LL;
-#pragma __unroll
-   	for(int a = 0; a<8; a++){
-   		location |= options[a];
-   	}
+	#pragma __unroll
+	for (int a = 0; a<8; a++){
+		location |= options[a];
+	}
+	return location;	
+}
 
-	if (location == 0ULL) return 0;
 
+__device__ __inline__ int makeMove(int globalIdx, ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, uint64_t* options, uint64_t location){	
 	uint64_t boardOpp;
 	
 	if (isWhiteToPlay){		
@@ -436,6 +440,28 @@ __device__ __inline__ void swap(ulonglong2* p1, ulonglong2* p2){
 	p2 = temp;
 }
 
+__device__ __inline__ int countOptions(uint64_t locations){
+	return __popcll(locations);
+}
+
+/************************************************************************************
+*
+* Count options that only flips in one direction
+*
+************************************************************************************/
+__device__ __inline__ uint64_t getQuiteMoves(uint64_t* options){
+	uint64_t q = options[0];
+	uint64_t mask = FULLBOARD;
+
+	for (int i = 1; i<8; i++){
+		int p = options[i] & mask;
+		mask ^= (q & p);
+		q |= (p & mask);
+	}
+	return q & mask;
+}
+
+
 /************************************************************************************
  *
  * TODO: count disc differance at end of game. Store value in node. Use alpha-beta pruning
@@ -449,24 +475,34 @@ __global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPla
 	uint64_t options[8];
 	for(counter a=zero; a < depth ; a++){
 		getLegalMoves(&positions[globalIdx], isWhiteToPlay, options);
-		int chosenMove = makeMove(globalIdx, positions, result, isWhiteToPlay, options);
-		isWhiteToPlay ^= 1;
-		if (chosenMove!=0){
+		
+		uint64_t locations = mergeOptions(options);
+		if (locations != 0ULL) {			
+			int nbrOfOptions = countOptions(locations);
+			uint64_t quiteLocations = getQuiteMoves(options);
+			if (quiteLocations != 0LL && a < PREFER_QUITE_MOVE_CUT_OFF){
+				locations = quiteLocations;
+			}
+
+			int chosenMove = makeMove(globalIdx, positions, result, isWhiteToPlay, options, locations);
 			positions[globalIdx] = result[globalIdx];
-			
+
 			endOfGame = zero;
 #ifdef DO_TRANSCRIPT
 			transcript[chosenMove-1] = a +1;
 #endif
-		}else{
+		}
+		else{
 			// pass
-			endOfGame++;			
-			if (endOfGame>one) break;
+			endOfGame++;
+			if (endOfGame > one) break;
 			a--;
-		}	
+		}
+		isWhiteToPlay ^= 1;
 	}
 	int diffForBlack = __popcll(positions[globalIdx].y) - __popcll(positions[globalIdx].x);
 }
+
 
 /************************************************************************************
  *
@@ -652,7 +688,7 @@ int main(int argc, char **argv)
 
 	HANDLE threadHandles[MAX_DEVICES];
 
-	int devices = 2;
+	int devices = 1;
 	int nowait = 0;
 
 	for (int i = 1; i < argc; i++){
