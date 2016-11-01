@@ -101,7 +101,7 @@ double statistics[MAX_DEVICES];
 // refactor so takeback is possible
 // Count disc differance at end of game. Store value in node. 
 // Use alpha-beta pruning
-// multi-threaded så begge devices anvendes
+// multi-threaded sï¿½ begge devices anvendes
 // fix fejl ved flere streams
 // 
 
@@ -659,17 +659,19 @@ int main(int argc, char **argv)
 		if (strncmp(argv[i],"-Dstreams", 9)==0){
 			streams = atoi(argv[++i]);
 		}
-		if (strncmp(argv[i],"-Ddevices", 8)==0){
+		if (strncmp(argv[i],"-Ddevices", 7)==0){
 			devices = atoi(argv[++i]);
 			if (devices > MAX_DEVICES){
 				printf("Maximum number of devices is %d", MAX_DEVICES);
 				exit(1);
 			}
+		}else if (strncmp(argv[i],"-Ddevice", 8)==0){
+			device = atoi(argv[++i]);
 		}
-		if (strncmp(argv[i],"-Ddepth", 8)==0){
+		if (strncmp(argv[i],"-Ddepth", 7)==0){
 			depth = atoi(argv[++i]);
 		}
-		if (strncmp(argv[i],"-Dnowait", 8)==0){
+		if (strncmp(argv[i],"-Dnowait", 7)==0){
 			nowait = 1;
 		}
 		if (strncmp(argv[i], "-Dfile", 6) == 0){
