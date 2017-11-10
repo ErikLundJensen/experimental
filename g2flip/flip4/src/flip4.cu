@@ -18,7 +18,7 @@
 // Select CUDA device type
 //#define gtx295 1
 
-#define ITERATIONS 2000
+#define ITERATIONS 1000
 
 // Early break in loops increases throughput by 17% even though threads gets more diverted
 #define earlybreak 1
@@ -37,13 +37,13 @@
 #define BLOCK_SIZE 128
 #define GRID_SIZE 2048
 #else
-#define BLOCK_SIZE 32
-#define GRID_SIZE 512
+#define BLOCK_SIZE 128
+#define GRID_SIZE 1024
 #endif
 
 #define DEFAULT_DEPTH 60
 
-#define MAX_STREAMS 2
+#define MAX_STREAMS 4
 #define MAX_DEVICES 2
 
 // Parameters used for switching between float and int for counters
@@ -98,7 +98,7 @@ long long getCurrentTs(){
 }
 
 // Overall configuration of execution
-int streams = 1;
+int streams = 4;
 int depth = DEFAULT_DEPTH;
 int initFromFile = 0;
 
@@ -684,9 +684,9 @@ int main(int argc, char **argv)
 
 	//HANDLE threadHandles[MAX_DEVICES];
 
-	int devices = 2;
+	int devices = 1;
 	int nowait = 0;
-	int device = 1;
+	int device = 0;
 
 	for (int i = 1; i < argc; i++){
 		if (strncmp(argv[i],"-Dstreams", 9)==0){
