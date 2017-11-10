@@ -3,6 +3,9 @@
 	<storageModule moduleId="org.eclipse.cdt.core.settings">
 		<cconfiguration id="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638">
 			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638" moduleId="org.eclipse.cdt.core.settings" name="Debug">
+				<macros>
+					<stringMacro name="std" type="VALUE_TEXT" value="c++11"/>
+				</macros>
 				<externalSettings/>
 				<extensions>
 					<extension id="com.nvidia.cuda.ide.elf" point="org.eclipse.cdt.core.BinaryParser"/>
@@ -19,28 +22,28 @@
 			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
 				<configuration artifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.debug" cleanCommand="rm -rf" description="" id="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638" name="Debug" parent="com.nvidia.cuda.ide.eight_zero.configuration.debug">
 					<folderInfo id="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638." name="/" resourcePath="">
-						<toolChain id="com.nvidia.cuda.tools.toolchain.eight_zero.exe.debug.1018336911" name="CUDA Toolkit 8.0" superClass="com.nvidia.cuda.tools.toolchain.eight_zero.exe.debug">
-							<targetPlatform archList="all" binaryParser="com.nvidia.cuda.ide.elf;com.nvidia.cuda.ide.macho;com.nvidia.cuda.ide.cubin" id="com.nvidia.cuda.ide.targetPlatform.1893975351" isAbstract="false" name="Debug Platform" osList="linux,macosx" superClass="com.nvidia.cuda.ide.targetPlatform"/>
-							<builder buildPath="${workspace_loc:/flip4}/Debug" id="com.nvidia.cuda.ide.builder.2104798168" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="CUDA Toolkit 8.0 Builder" parallelBuildOn="true" parallelizationNumber="6" superClass="com.nvidia.cuda.ide.builder"/>
-							<tool id="nvcc.compiler.base.1281549234" name="NVCC Compiler" superClass="nvcc.compiler.base">
-								<option id="nvcc.compiler.deviceDebug.983351606" name="Generate device debug information (-G)" superClass="nvcc.compiler.deviceDebug" value="true" valueType="boolean"/>
-								<option id="nvcc.compiler.option.level.1469561020" name="Generate host debug information (-g)" superClass="nvcc.compiler.option.level" value="true" valueType="boolean"/>
-								<option defaultValue="nvcc.compiler.optimization.level.none" id="nvcc.compiler.optimization.level.873680860" name="Optimization Level" superClass="nvcc.compiler.optimization.level" valueType="enumerated"/>
-								<option id="nvcc.compiler.pic.1859071026" name="Position Independent Code (-fPIC)" superClass="nvcc.compiler.pic"/>
-								<option id="nvcc.compiler.cpp11option.1675356470" name="Enable C++11 support (-std=c++11)" superClass="nvcc.compiler.cpp11option" value="true" valueType="boolean"/>
-								<inputType id="nvcc.compiler.input.cu.1887546988" superClass="nvcc.compiler.input.cu"/>
-								<inputType id="nvcc.compiler.input.cpp.1765695099" superClass="nvcc.compiler.input.cpp"/>
-								<inputType id="nvcc.compiler.input.c.1345185011" superClass="nvcc.compiler.input.c"/>
+						<toolChain id="com.nvidia.cuda.ide.toolchain.nine_zero.320018251" name="CUDA Toolkit 9.0" superClass="com.nvidia.cuda.ide.toolchain.nine_zero">
+							<targetPlatform archList="all" binaryParser="com.nvidia.cuda.ide.elf;com.nvidia.cuda.ide.macho;com.nvidia.cuda.ide.cubin" id="com.nvidia.cuda.ide.targetPlatform.833312554" isAbstract="false" name="Debug Platform" osList="linux,macosx" superClass="com.nvidia.cuda.ide.targetPlatform"/>
+							<builder buildPath="${workspace_loc:/flip4}/Debug" id="com.nvidia.cuda.ide.builder.1659790617" keepEnvironmentInBuildfile="false" name="CUDA Toolkit 9.0 Builder" parallelBuildOn="true" parallelizationNumber="6" superClass="com.nvidia.cuda.ide.builder"/>
+							<tool id="nvcc.compiler.base.1842622608" name="NVCC Compiler" superClass="nvcc.compiler.base">
+								<option id="nvcc.compiler.deviceDebug.1099286362" name="Generate device debug information (-G)" superClass="nvcc.compiler.deviceDebug" value="true" valueType="boolean"/>
+								<option id="nvcc.compiler.option.level.1801819160" name="Generate host debug information (-g)" superClass="nvcc.compiler.option.level" value="true" valueType="boolean"/>
+								<option defaultValue="nvcc.compiler.optimization.level.none" id="nvcc.compiler.optimization.level.1885646042" name="Optimization Level" superClass="nvcc.compiler.optimization.level" valueType="enumerated"/>
+								<option id="nvcc.compiler.pic.663574632" name="Position Independent Code (-fPIC)" superClass="nvcc.compiler.pic"/>
+								<option id="nvcc.compiler.cpp11option.2075430959" superClass="nvcc.compiler.cpp11option" value="true" valueType="boolean"/>
+								<inputType id="nvcc.compiler.input.cu.55279096" superClass="nvcc.compiler.input.cu"/>
+								<inputType id="nvcc.compiler.input.cpp.121643642" superClass="nvcc.compiler.input.cpp"/>
+								<inputType id="nvcc.compiler.input.c.1842252884" superClass="nvcc.compiler.input.c"/>
 							</tool>
-							<tool id="nvcc.linker.base.1007809305" name="NVCC Linker" superClass="nvcc.linker.base">
-								<inputType id="nvcc.linker.input.515167992" superClass="nvcc.linker.input">
+							<tool id="nvcc.linker.base.1397672287" name="NVCC Linker" superClass="nvcc.linker.base">
+								<inputType id="nvcc.linker.input.1299885814" superClass="nvcc.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
 									<additionalInput kind="additionalinput" paths="$(LIBS)"/>
 								</inputType>
 							</tool>
-							<tool id="nvcc.archiver.base.1221606742" name="NVCC Archiver" superClass="nvcc.archiver.base"/>
-							<tool id="com.nvidia.host.assembler.392731653" name="Host Assembler" superClass="com.nvidia.host.assembler">
-								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.1901818022" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
+							<tool id="nvcc.archiver.base.1977590907" name="NVCC Archiver" superClass="nvcc.archiver.base"/>
+							<tool id="com.nvidia.host.assembler.1413746781" name="Host Assembler" superClass="com.nvidia.host.assembler">
+								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.966830624" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
 							</tool>
 						</toolChain>
 					</folderInfo>
@@ -51,10 +54,10 @@
 			</storageModule>
 			<storageModule moduleId="com.nvidia.cuda.ide.build.project.ICudaProjectConfiguration">
 				<executable devicelink="false">
-					<sass major="6" minor="0"/>
-					<ptx major="6" minor="0"/>
+					<ptx major="6" minor="1"/>
+					<sass major="6" minor="1"/>
 				</executable>
-				<editor-arch major="6" minor="0"/>
+				<editor-arch major="6" minor="1"/>
 			</storageModule>
 			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
 		</cconfiguration>
@@ -78,7 +81,7 @@
 					<folderInfo id="com.nvidia.cuda.ide.eight_zero.configuration.release.1608796569." name="/" resourcePath="">
 						<toolChain id="com.nvidia.cuda.ide.toolchain.eight_zero.exe.release.477844856" name="CUDA Toolkit 8.0" superClass="com.nvidia.cuda.ide.toolchain.eight_zero.exe.release">
 							<targetPlatform archList="all" binaryParser="com.nvidia.cuda.ide.elf;com.nvidia.cuda.ide.macho;com.nvidia.cuda.ide.cubin" id="com.nvidia.cuda.ide.targetPlatform.623351765" isAbstract="false" name="Debug Platform" osList="linux,macosx" superClass="com.nvidia.cuda.ide.targetPlatform"/>
-							<builder buildPath="${workspace_loc:/flip4}/Release" id="com.nvidia.cuda.ide.builder.780814164" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="CUDA Toolkit 8.0 Builder" superClass="com.nvidia.cuda.ide.builder"/>
+							<builder buildPath="${workspace_loc:/flip4}/Release" id="com.nvidia.cuda.ide.builder.780814164" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="CUDA Toolkit 9.0 Builder" superClass="com.nvidia.cuda.ide.builder"/>
 							<tool id="nvcc.compiler.base.49211465" name="NVCC Compiler" superClass="nvcc.compiler.base">
 								<option id="nvcc.compiler.deviceDebug.938707267" name="Generate device debug information (-G)" superClass="nvcc.compiler.deviceDebug"/>
 								<option id="nvcc.compiler.option.level.1020993480" name="Generate host debug information (-g)" superClass="nvcc.compiler.option.level"/>
@@ -118,18 +121,6 @@
 	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
 		<project id="flip4.com.nvidia.cuda.ide.eight_zero.exe.419695543" name="Executable" projectType="com.nvidia.cuda.ide.eight_zero.exe"/>
 	</storageModule>
-	<storageModule moduleId="scannerConfiguration">
-		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
-		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1281549234;nvcc.compiler.input.cu.1887546988">
-			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
-		</scannerConfigBuildInfo>
-		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1281549234;nvcc.compiler.input.cpp.1765695099">
-			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
-		</scannerConfigBuildInfo>
-		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1281549234;nvcc.compiler.input.c.1345185011">
-			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
-		</scannerConfigBuildInfo>
-	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
 	<storageModule moduleId="refreshScope" versionNumber="2">
 		<configuration configurationName="Debug">
@@ -141,4 +132,25 @@
 	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
 	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
+	<storageModule moduleId="scannerConfiguration">
+		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1842622608;nvcc.compiler.input.cpp.121643642">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1281549234;nvcc.compiler.input.cu.1887546988">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1842622608;nvcc.compiler.input.cu.55279096">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1842622608;nvcc.compiler.input.c.1842252884">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1281549234;nvcc.compiler.input.cpp.1765695099">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
+		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638;com.nvidia.cuda.ide.eight_zero.configuration.debug.1244608638.;nvcc.compiler.base.1281549234;nvcc.compiler.input.c.1345185011">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.nvidia.cuda.ide.build.NVCCPerProjectProfile"/>
+		</scannerConfigBuildInfo>
+	</storageModule>
 </cproject>
