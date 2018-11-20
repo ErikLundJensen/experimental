@@ -15,18 +15,19 @@ The invocation of copy is included in the performance benchmark.
 The test setup runs through from start position to end-of-game (including handling pass).
 
 The result of the performance test is:
-<B>2.8 giga moves per second</B> (where "move" is defined as above)
+<B>6.5 giga moves per second</B> (where "move" is defined as above)
 
-Running at overclocked watercooled NVIDIA Geforce GTX 690.
+Running at overclocked watercooled NVIDIA Geforce GTX 1080.
 
-The latest gain (from 1.17G moves/s to 2.8G moves/s) came from simplification of algorithm for flipping discs -- the cost was addition memory usage (64 bytes from the stack).
+The latest gain (from 2.8G moves/s to 7.7G moves/s) came from upgrading from GTX 690 to 1080.
+
 The current source/implementation does not look like a real optimization for the GPU, as it contains a lot of branching, however, the implementation is anyhow real fast.
 
 It is quite problematic to combine this implementation with existing Othello programs running on CPU, as the amount of data is hard to get through the PCI bus.
 Calculation given by 20 bytes per position gives 56 GB/s in and out which is beyond the current speed of PCI 3.0 x16.
 
 One solution to this limitation is running the alpha-beta pruning at the GPU using CUDA, however, that is a complex task as branching is bad for the GPU.
-Launching a Cuda kernel for just a few moves or positions has a large overhead (minimum 16ms om GTX 295). The current implementation handles 2 million positions in parallel to get to the maxium speed at the GTX 690.
+Launching a Cuda kernel for just a few moves or positions has a large overhead (minimum 16ms om GTX 295). The current implementation handles 512K positions in parallel to get to the current speed at the GTX 1080.
 
 One way to optimize the algorithm could be to lower the latency by using multiple threads per position. This requires that 8 threads is handling the same position which leads to some syncronization of the threads and will be a quite complex implementation. This could lead to a lower overall through-put, however, the latency will be decreased.
 
