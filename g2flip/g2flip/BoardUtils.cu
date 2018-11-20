@@ -62,8 +62,9 @@ void setupPosition(ulonglong2* p, int index){
 	p[index].x = getBoard(board, 'X');
 	p[index].y = getBoard(board, 'O');
 
-	p[index].x |= 1ULL << (2 + 3*8);
-	p[index].y |= 1ULL << (2 + 3*8);
+// First move is not given any more
+//	p[index].x |= 1ULL << (2 + 3*8);
+//	p[index].y |= 1ULL << (2 + 3*8);
 
 }
 
@@ -72,9 +73,9 @@ void initPositions(ulonglong2* p, int numberOfPositions){
 	for(int i = 0; i< numberOfPositions; i++){
 		setupPosition(p, i);
 	}
-	char board[500];
-	board[0] = 0;
-	//printf("Board\n%s\n", toBoard(p[0], 1, 0, board));
+	// char board[500];
+	// board[0] = 0;
+	// printf("Board\n%s\n", toBoard(p[0], 1, 0, board));
 }
 
 uint64_t getBoard(char* board, char c){
@@ -175,7 +176,24 @@ char* toRow(unsigned int r, int color, char row[]){
 	return row;
 }
 
+// Print transcript as D3C3...
 char* formatTranscript(int* transcript, int labels, int color, char* board){
+	// Clear moves
+	for (int n = 0; n < 130; n++){
+		board[n] = ' ';
+	}
+	board[129] = 0;
+
+	for (int n = 0; n < 64; n++){
+		int movenr = transcript[n] - 1;
+		board[movenr * 2] = 'A' + n % 8;
+		board[movenr * 2 + 1] = '1' + (n / 8);
+	}	
+	return board;
+}
+
+// Print transcript as a board
+char* formatTranscriptVisual(int* transcript, int labels, int color, char* board){
 	if (labels){
 		strcat(board, "  ------------------------\n");
 		strcat(board, " |A |B |C |D |E |F |G |H |");
@@ -197,4 +215,33 @@ char* formatTranscript(int* transcript, int labels, int color, char* board){
 		strcat(board, " -------------------------\n");
 	}
 	return board;
+}
+
+int readFromFile(char *filename, ulonglong2* positions, int maxPositions){
+	int lines_allocated = maxPositions;
+	int max_line_len = 200;
+	char buffer[200];
+
+	FILE *fp;
+	fp = fopen(filename, "r"); // read mode
+
+	if (fp == NULL)
+	{
+		perror("Error while opening the file\n");
+		exit(EXIT_FAILURE);
+	}
+	int i;
+	for (i = 0; i<lines_allocated; i++)
+	{
+		if (fgets(buffer, max_line_len - 1, fp) == NULL){
+			break;
+		}
+		uint64_t b = getBoard(buffer, 'X');
+		uint64_t w = getBoard(buffer, 'O');
+
+		positions[i].x = b;
+		positions[i].y = w;
+	}
+	fclose(fp);
+	return i;	
 }

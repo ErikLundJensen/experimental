@@ -8,15 +8,72 @@
 #include <vector_types.h>
 #include "mapper.h"
 
+
+// GTX 295 configuration and mega moves per second
+//Threads Grid	Total mm / s
+//128	2048	810			<--- Best configuration (giving 262144 parallel games)
+// 32      1      1			<--- latency is 31ms for 1-10 moves
+//  8      1      1			<--- latency is 16ms for 1-10 moves
+// Select CUDA device type
+#define gtx295 1
+
 #define ITERATIONS 100
+
+// Early break in loops increases throughput by 17% even though threads gets more diverted
+#define earlybreak 1
+
+// Use float for counters reduces throughput by about 7% even though several tera flops are available
+//#define usefloat 1
+
+// Copy result after each game iteration
+//#define COPY_RESULT_TO_HOST 1
+
+// Print transcript from one of the played games
+//#define DO_TRANSCRIPT 1
+
+#ifdef gtx295
 // Actual thread number
+#define BLOCK_SIZE 128
+#define GRID_SIZE 2048
+#else
 #define BLOCK_SIZE 256
 #define GRID_SIZE 4096
+#endif
 
-//#define GRID_SIZE 16384
 #define DEFAULT_DEPTH 60
 
 #define MAX_STREAMS 2
+#define MAX_DEVICES 2
+
+// Parameters used for switching between float and int for counters
+#ifdef usefloat
+#define zero 0.0
+#define one 1.0
+#define three 3.0
+#define five 5.0
+#define six 6.0
+#define eight 8.0
+#define sixtyfour 64.0
+#define counter float
+#else
+#define zero 0
+#define one 1
+#define three 3
+#define five 5
+#define six 6
+#define eight 8
+#define sixtyfour 64
+#define counter int
+#endif
+
+#define DIR_DOWN 0
+#define DIR_UP 1
+#define DIR_LEFT 2
+#define DIR_RIGHT 3
+#define DIR_LEFTDOWN 4
+#define DIR_LEFTUP 5
+#define DIR_RIGHTDOWN 6
+#define DIR_RIGHTUP 7
 
 const uint64_t NotA1A8 = 18374403900871474942ULL;
 const uint64_t NotH1H8 = 9187201950435737471ULL;
@@ -30,16 +87,21 @@ char* toBoard(ulonglong2 b, int labels, int color, char* board);
 char* toRow(unsigned int r, int color, char* row);
 char* toBoard_Pattern(uint64_t b, int labels, char* board);
 char* formatTranscript(int* transcript, int labels, int color, char* board);
+int readFromFile(char *filename, ulonglong2* positions, int maxPositions);
 
-#define DO_FLIP 1
-//#define DO_TRANSCRIPT 1
+// Overall configuration of execution
+int streams = 1;
+int depth = DEFAULT_DEPTH;
+int initFromFile = 0;
+
+double statistics[MAX_DEVICES];
 
 // TODO:
 // implement node structure
 // refactor so takeback is possible
 // Count disc differance at end of game. Store value in node. 
 // Use alpha-beta pruning
-// multi-threaded så begge devices anvendes
+// multi-threaded sï¿½ begge devices anvendes
 // fix fejl ved flere streams
 // 
 
@@ -52,33 +114,41 @@ void onErrorExit(char *msg, cudaError_t error, int line){
 
 /************************************************************************************
  *
- *	Utility methods for calculating lines excluding H1-H8 and A1-A8
+ *	Utility methods for calculating lines excluding H1-H8 and A1-A8.
+ *  Only invoked once
  *
  ************************************************************************************/
 uint64_t getNotH1H8(){
 	uint64_t v = 0LL;
-	for(int y = 0; y < 8; y++){
-		v |= (1LL<< (y*8)); 
+	for(int y = 0; y < 64; y+=8){
+		v |= (1LL<< y); 
 	} 
 	return ~v;
 }
 
 uint64_t getNotA1A8(){
 	uint64_t v = 0LL;
-	for(int y = 0; y < 8; y++){
-		v |= (128LL<< (y*8)); 
+	for (int y = 0; y < 64; y += 8){
+		v |= (128LL<< y); 
 	} 
 	return ~v;
 }
 
 /************************************************************************************
  *
- *	Find legal moves and add them to the board
+ *	Find legal moves and store them in options array
  *
  ************************************************************************************/
-__device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
+__device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay, uint64_t *options){
 	uint64_t me;
 	uint64_t op;
+
+	// Clear options
+#pragma __unroll
+	for(int a = 0; a<8; a++){
+		options[a] = 0LL;
+	}
+
 	if (isWhiteToPlay){
 		me = board[0].y;
 		op = board[0].x;
@@ -87,71 +157,51 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 		me = board[0].x;
 	}	
 
-	uint64_t f = 0LL; // legal moves (output)
 	uint64_t e;		// empty fields
-	uint64_t v;		// temp variable
-	f = 0LL;
+	uint64_t v;		// temp variable	
 	e = ~(me | op);
 	/////////////////////////////////
 	// down
 	v = me;
 	v <<= 8;		// 1.
-	v &= op;
-	v <<= 8;		// 2.
-	f = e & v;
-	v &= op;
-	v <<= 8;		// 3.
-	f |= (e & v);
-	v &= op;
-	v <<= 8;		// 4.
-	f |= (e & v);
-	v &= op;
-	v <<= 8;		// 5.
-	f |= (e & v);
-	v &= op;
-	v <<= 8;		// 6.
-	f |= (e & v);
-	v &= op;
-	v <<= 8;		// 7.
-	f |= (e & v);
+#pragma __unroll
+	for (int a = 0; a < 6; a++){
+		v &= op;
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v <<= 8;		// 2-7
+		options[DIR_DOWN] |= (e & v);
+	}
 	
 	/////////////////////////////////
 	// up	
 	v = me;
 	v >>= 8;		// 1.
-	v &= op;
-	v >>= 8;		// 2.
-	f |= (e & v);
-	v &= op;
-	v >>= 8;		// 3.
-	f |= (e & v);
-	v &= op;
-	v >>= 8;		// 4.
-	f |= (e & v);
-	v &= op;
-	v >>= 8;		// 5.
-	f |= (e & v);
-	v &= op;
-	v >>= 8;		// 6.
-	f |= (e & v);
-	v &= op;
-	v >>= 8;		// 7.
-	f |= (e & v);
+#pragma __unroll
+	for (int a = 0; a < 6; a++){
+		v &= op;
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v >>= 8;
+		options[DIR_UP] |= (e & v);
+	}
+	
 	
 	/////////////////////////////////
 	// right		
 	v = me;
 	v <<= 1;		// 1.
 	v &= NotEDGE;
-	v &= op;
-	v <<= 1;		// 2.	
-	f |= e & v;
-	v &= NotEDGE;
 #pragma __unroll
-	for(int a = 0; a<5; a++){
+	for(int a = 0; a<6; a++){
 		v &= op;
-		v <<= 1;		// 3-7		
-		f |= (e & v);
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v <<= 1;		// 2-7		
+		options[DIR_RIGHT] |= (e & v);
 		v &= NotEDGE;
 	}
 	
@@ -161,15 +211,14 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 	v = me;
 	v >>= 1;		// 1.	
 	v &= NotEDGE;
-	v &= op;
-	v >>= 1;		// 2.	
-	f |= (e & v);
-	v &= NotEDGE;
 #pragma __unroll
-	for(int a = 0; a<5; a++){
+	for(int a = 0; a<6; a++){
 		v &= op;
-		v >>= 1;		// 3-7		
-		f |= (e & v);
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v >>= 1;		// 2-7		
+		options[DIR_LEFT] |= (e & v);
 		v &= NotEDGE;
 	}
 	
@@ -178,15 +227,14 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 	v = me;
 	v >>= 9;		// 1.
 	v &= NotEDGE;
-	v &= op;
-	v >>= 9;		// 2.
-	f |= (e & v);
-	v &= NotEDGE;
 #pragma __unroll
-	for(int a = 0; a<5; a++){
+	for(int a = 0; a<6; a++){
 		v &= op;
-		v >>= 9;		// 3-7
-		f |= (e & v);
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v >>= 9;		// 2-7
+		options[DIR_LEFTUP] |= (e & v);
 		v &= NotEDGE;
 	}
 	
@@ -195,15 +243,14 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 	v = me;
 	v >>= 7;		// 1.
 	v &= NotEDGE;
-	v &= op;
-	v >>= 7;		// 2.	
-	f |= (e & v);
-	v &= NotEDGE;
 #pragma __unroll
-	for(int a = 0; a<5; a++){
+	for(int a = 0; a<6; a++){
 		v &= op;
-		v >>= 7;		// 3-7		
-		f |= (e & v);
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v >>= 7;		// 2-7		
+		options[DIR_RIGHTUP] |= (e & v);
 		v &= NotEDGE;
 	}
 	
@@ -212,15 +259,14 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 	v = me;
 	v <<= 7;		// 1.
 	v &= NotEDGE;
-	v &= op;
-	v <<= 7;		// 2.
-	f |= (e & v);
-	v &= NotEDGE;
 #pragma __unroll
-	for(int a = 0; a<5; a++){
+	for(int a = 0; a<6; a++){
 		v &= op;
-		v <<= 7;		// 3-7
-		f |= (e & v);
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v <<= 7;		// 2-7
+		options[DIR_LEFTDOWN] |= (e & v);
 		v &= NotEDGE;
 	}
 	
@@ -228,184 +274,18 @@ __device__ void getLegalMoves(ulonglong2 *board, int isWhiteToPlay){
 	// right-down
 	v = me;
 	v <<= 9;		// 1.
-	v &= NotEDGE;
-	v &= op;
-	v <<= 9;		// 2.
-	f |= (e & v);
-	v &= NotH1H8;
+	v &= NotEDGE;	
 #pragma __unroll
-	for(int a = 0; a<5; a++){
+	for(int a = 0; a<6; a++){
 		v &= op;
-		v <<= 9;		// 3-7
-		f |= (e & v);
+#ifdef earlybreak
+		if (v == 0) break;
+#endif
+		v <<= 9;		// 2-7
+		options[DIR_RIGHTDOWN] |= (e & v);
 		v &= NotEDGE;
 	}
-	
-	board[0].x |= f;
-	board[0].y |= f;
-	
 	return;
-}
-
-/************************************************************************************
- *
- *	Flip methods
- *
- ************************************************************************************/
-__device__ __inline__ unsigned int flipRight(int x, unsigned int me, unsigned int opp){	 	
-	unsigned int a = x+1;
-	unsigned int c = opp >> a;
-	c++;
-	c &= (me >> a);
-	c==0 ? 0 : c--;
-	c <<= a;
-	return c;
-}		
-	
-__device__ __inline__ unsigned int flipLeft(int x, unsigned int me, unsigned int opp){
-	return __brev(flipRight(7-x, __brev(me) >> 24 , __brev(opp) >> 24)) >> 24;	
-}
-
-__device__	__inline__ unsigned int flipHorizontal(uint64_t me, uint64_t opp, int x, int yHigh){    
-	unsigned int lineMe = (me >> yHigh) & 255 ;
-	unsigned int lineOpp = (opp >> yHigh) & 255;
-				
-	return flipLeft(x, lineMe, lineOpp) | 		 
-		   flipRight(x, lineMe, lineOpp);
-}
-
-__device__	__inline__ uint64_t horizontalPattern(int y, int xorPattern) {
-	return ((uint64_t) xorPattern) << (y<<3);
-}
-
-__device__	__inline__ unsigned int flipVertical(uint64_t me, uint64_t opp, int x, int y) {
-	unsigned int lineMe = 0U;
-	unsigned int lineOpp = 0U;
-				
-	uint64_t pos = 1ULL << x;
-	uint64_t z= 1ULL;  // 7*8 = 56 inst
-#pragma unroll	
-	do{			
-		lineMe  |= (unsigned int) __min(z, (me & pos));
-		lineOpp |= (unsigned int) __min(z, (opp & pos));
-		pos <<=8;
-		z <<= 1;
-	}while(z<=128);
-
-	return flipLeft(y, lineMe, lineOpp) | 		 
-		   flipRight(y, lineMe, lineOpp);		
-}
-
-__device__	__inline__ uint64_t verticalPattern(int x, unsigned int xorPattern) {
-	int pos = x;
-	uint64_t pattern = 0ULL;
-		
-	int z = 1;	
-#pragma unroll
-	do{			
-		pattern |= ((uint64_t) (xorPattern & z)) << pos;
-		pos += 7;
-		z <<= 1;
-	}while(z<=128);
-
-	return pattern;
-}
-
-__device__	__inline__ uint64_t flipDiagonalDownRight(uint64_t me, uint64_t opp, uint64_t location) {
-	uint64_t v = location;	
-	uint64_t flipped = 0ULL;
-	uint64_t ok = 0ULL;
-
-	v <<= 9;		// 1.
-	v &= NotEDGE;
-	v &= opp;
-	flipped |= v;
-	v <<= 9;		// 2.
-#pragma __unroll
-	for (int a = 0; a < 5; a++){		
-		ok |= (me & v);
-		v &= NotEDGE;
-		v &= opp;
-		flipped |= v;		
-		v <<= 9;		// 3-7		
-	}	
-	ok |= (me & v);		// 8.
-	return ok == 0ULL ? 0ULL : flipped;
-}
-
-__device__	__inline__ uint64_t flipDiagonalDownLeft(uint64_t me, uint64_t opp, uint64_t location) {
-	uint64_t v = location;
-	uint64_t flipped = 0ULL;
-	uint64_t ok = 0ULL;
-
-	v <<= 7;		// 1.
-	v &= NotEDGE;
-	v &= opp;
-	flipped |= v;
-	v <<= 7;		// 2.	
-#pragma __unroll
-	for (int a = 0; a < 5; a++){
-		ok |= (me & v);
-		v &= NotEDGE;
-		v &= opp;
-		flipped |= v;
-		v <<= 7;		// 3-7		
-	}
-	ok |= (me & v);		// 8.	
-	return ok == 0ULL ? 0ULL : flipped;
-}
-
-__device__	__inline__ uint64_t flipDiagonalDown(uint64_t me, uint64_t opp, uint64_t location) {
-	return flipDiagonalDownLeft(me, opp, location) | flipDiagonalDownRight(me, opp, location);	
-}
-
-
-__device__	__inline__ uint64_t flipDiagonalUpRight(uint64_t me, uint64_t opp, uint64_t location) {
-	uint64_t v = location;
-	uint64_t flipped = 0ULL;
-	uint64_t ok = 0ULL;
-
-	v >>= 7;		// 1.
-	v &= NotEDGE;
-	v &= opp;
-	flipped |= v;
-	v >>= 7;		// 2.
-#pragma __unroll
-	for (int a = 0; a < 5; a++){
-		ok |= (me & v);
-		v &= NotEDGE;
-		v &= opp;
-		flipped |= v;
-		v >>= 7;		// 3-7		
-	}
-	ok |= (me & v);		// 8.
-	return ok == 0ULL ? 0ULL : flipped;
-}
-
-__device__	__inline__ uint64_t flipDiagonalUpLeft(uint64_t me, uint64_t opp, uint64_t location) {
-	uint64_t v = location;
-	uint64_t flipped = 0ULL;
-	uint64_t ok = 0ULL;
-
-	v >>= 9;		// 1.
-	v &= NotEDGE;
-	v &= opp;
-	flipped |= v;
-	v >>= 9;		// 2.	
-#pragma __unroll
-	for (int a = 0; a < 5; a++){
-		ok |= (me & v);
-		v &= NotEDGE;
-		v &= opp;
-		flipped |= v;
-		v >>= 9;		// 3-7		
-	}
-	ok |= (me & v);		// 8.	
-	return ok == 0ULL ? 0ULL : flipped;
-}
-
-__device__	__inline__ uint64_t flipDiagonalUp(uint64_t me, uint64_t opp, uint64_t location) {
-	return flipDiagonalUpLeft(me, opp, location) | flipDiagonalUpRight(me, opp, location);
 }
 
 /************************************************************************************
@@ -417,103 +297,173 @@ __device__ __inline__ int selectOption(uint64_t options){
 
 	// TODO: Optimize and do select by pruning etc.
 	// Select the middle options of the possible options	
-	int numberOfOptions = __popcll(options);
-	if (numberOfOptions > 3){
+	counter numberOfOptions = (counter) __popcll(options);
+	if (numberOfOptions > three){
+#ifdef usefloat
+		numberOfOptions /= 2.0;
+#else
 		numberOfOptions >>= 1;
-		for (int a=0; a<numberOfOptions; a++){
+#endif		
+		for (counter a = zero; a<numberOfOptions; a++){
 			int optionDeselected = __ffsll(options);
-			options ^= (1ULL << (optionDeselected-1));
+			options ^= (1ULL << (optionDeselected - 1));
 		}
 	}
 	return __ffsll(options);
 }
 
-/************************************************************************************
- *
- * Location of move to play is stored as "black and white in same field"
- *
- ************************************************************************************/
-__device__ __inline__ int option(ulonglong2* positions, ulonglong2* result, int isWhiteToPlay){
-	uint64_t boardMe;
+
+
+__device__ __inline__ int makeMove(int globalIdx, ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, uint64_t *options){
+	uint64_t location = 0LL;
+#pragma __unroll
+   	for(int a = 0; a<8; a++){
+   		location |= options[a];
+   	}
+
+	if (location == 0ULL) return 0;
+
 	uint64_t boardOpp;
 	
-	// TODO: move globalIdx and pos out of this method
-	int globalIdx = blockIdx.x * blockDim.x + threadIdx.x;
-
 	if (isWhiteToPlay){		
 		boardOpp = positions[globalIdx].x;
-		boardMe = positions[globalIdx].y;
 	}else{		
 		boardOpp = positions[globalIdx].y;
-		boardMe = positions[globalIdx].x;
 	}
 
-	uint64_t location = boardMe & boardOpp;
-	if (location==0ULL) return 0;
-
-	boardMe ^= location;
-	boardOpp ^= location;
-	
 	int bitNr = selectOption(location);
 	if (bitNr == 0){
 		return 0;
 	}
 	bitNr--;
-	int x = bitNr & 7;
-	int y = bitNr >> 3;
-	int yHigh = bitNr & (8+16+32);
-	
-	uint64_t xorPattern = 0ULL;
-	
-	xorPattern |= horizontalPattern(y, flipHorizontal(boardMe, boardOpp, x, yHigh));
-	xorPattern |= verticalPattern(x, flipVertical(boardMe, boardOpp, x, y));
-	xorPattern |= flipDiagonalUp(boardMe, boardOpp, 1ULL << bitNr);	
-	xorPattern |= flipDiagonalDown(boardMe, boardOpp, 1ULL << bitNr); 
+	location = 1ULL << bitNr;
 
-
-	if (xorPattern){		
-		boardMe ^= (xorPattern | 1ULL<<bitNr);		
-		boardOpp ^= xorPattern;	
-		if (isWhiteToPlay){
-			result[globalIdx].x = boardOpp;
-			result[globalIdx].y = boardMe;
-		}else{
-			result[globalIdx].x = boardMe;
-			result[globalIdx].y = boardOpp;
+	uint64_t xorPattern = 0LL;
+	if (options[DIR_UP] & location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v <<= 8;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;			
 		}
-		getLegalMoves(&result[globalIdx], isWhiteToPlay ^ 1);
+	}
+
+	if (options[DIR_DOWN] & location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v >>= 8;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}
+
+	if (options[DIR_LEFT] & location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v <<= 1;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}
+
+	if (options[DIR_RIGHT]& location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v >>= 1;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}
+
+	if (options[DIR_LEFTUP] & location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v <<= 9;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}
+
+	if (options[DIR_LEFTDOWN] & location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v >>= 7;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}
+
+	if (options[DIR_RIGHTUP] & location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v <<= 7;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}
+	if (options[DIR_RIGHTDOWN] & location){
+		uint64_t v = location;
+#pragma __unroll
+		for(int a=0; a<6; a++){
+			v >>= 9;
+			if (!(boardOpp & v)) break;
+			xorPattern ^= v;
+		}
+	}		
+
+	result[globalIdx].x = positions[globalIdx].x ^ xorPattern;
+	result[globalIdx].y = positions[globalIdx].y ^ xorPattern;
+
+	if (isWhiteToPlay){				
+		result[globalIdx].y |= location;
+	}else{
+		result[globalIdx].x |= location;		
 	}
 
 	return bitNr + 1;
 }
 
+__device__ __inline__ void swap(ulonglong2* p1, ulonglong2* p2){
+	ulonglong2* temp = p1;
+	p1 = p2;
+	p2 = temp;
+}
+
 /************************************************************************************
  *
- * Location of move to play is stored as "black and white in same field"
  * TODO: count disc differance at end of game. Store value in node. Use alpha-beta pruning
  *
  ************************************************************************************/
-__global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, int depth, int* transcript)
-{	   
-	int endOfGame = 0;
+__global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPlay, counter depth, int* transcript)
+{	  
+	counter endOfGame = zero;
 	int globalIdx = blockIdx.x * blockDim.x + threadIdx.x;
 
-	for(int a=0; a < depth ; a++){
-		int chosenMove = option(positions, result, isWhiteToPlay);
+	uint64_t options[8];
+	for(counter a=zero; a < depth ; a++){
+		getLegalMoves(&positions[globalIdx], isWhiteToPlay, options);
+		int chosenMove = makeMove(globalIdx, positions, result, isWhiteToPlay, options);
 		isWhiteToPlay ^= 1;
 		if (chosenMove!=0){
-			positions = result;			
-			endOfGame = 0;
+			positions[globalIdx] = result[globalIdx];
+			
+			endOfGame = zero;
 #ifdef DO_TRANSCRIPT
 			transcript[chosenMove-1] = a +1;
 #endif
 		}else{
 			// pass
 			endOfGame++;			
-			if (endOfGame>1) break;
-			getLegalMoves(&positions[globalIdx], isWhiteToPlay);
+			if (endOfGame>one) break;
 			a--;
-		}		
+		}	
 	}
 	int diffForBlack = __popcll(positions[globalIdx].y) - __popcll(positions[globalIdx].x);
 }
@@ -523,7 +473,7 @@ __global__ void play(ulonglong2* positions, ulonglong2* result, int isWhiteToPla
  * Kernel starter
  *
  ************************************************************************************/
-int testKernel(int streams, int device, int depth)
+int testKernel(int streams, int device, int depth, int initFromFile)
 {	
 	int block_size = BLOCK_SIZE;
 	dim3 threads(block_size);
@@ -560,7 +510,8 @@ int testKernel(int streams, int device, int depth)
 	int* hTranscript[MAX_STREAMS];
 	int* dTranscript[MAX_STREAMS];
 
-    // Allocate host and device memory
+	// Allocate host and device memory
+
 	for(int i = 0; i < streams; i++){
 		//printf("Alloc mem... stream %d\n",i);
 		error = cudaMallocHost((void **) &hPositions[i], sizeof(ulonglong2) * streamSize);		
@@ -576,7 +527,13 @@ int testKernel(int streams, int device, int depth)
 		memset(hTranscript[i], 0, sizeof(int) * streamSize * 64);
 
 		//printf("Init positions... stream %d\n",i);
-		initPositions(hPositions[i], streamSize);
+		if (initFromFile != 0){
+			int loaded = readFromFile("\\temp\\games.txt", hPositions[i], numberOfPositions);
+			printf("Loaded %d positions\n", loaded);
+		}
+		else{
+			initPositions(hPositions[i], streamSize);
+		}
 
 		error = cudaMalloc((void **) &dPositions[i], sizeof(ulonglong2) * streamSize);
 		onErrorExit("memory", error, __LINE__);
@@ -593,6 +550,8 @@ int testKernel(int streams, int device, int depth)
 	long long numberOfMoves = (long long) numberOfPositions * depth * ITERATIONS;
 	printf("Number of moves: %5.3f giga moves\n",  numberOfMoves / 1000000000.0);
 
+	counter maxDepth = (counter) depth;
+
 	SYSTEMTIME time;	
 	GetSystemTime(&time);
 	printf("Start: %ld:%ld.%ld\n", time.wMinute, time.wSecond, time.wMilliseconds);
@@ -601,35 +560,28 @@ int testKernel(int streams, int device, int depth)
 	
 	for(int z = 0; z< ITERATIONS; z++){		
 		int i = z % streams;		
-		cudaStreamSynchronize(stream[i]);
-		//printf("%d",i);
+		
 		// copy host memory to device	
 		error = cudaMemcpyAsync(dPositions[i], hPositions[i], sizeof(ulonglong2) * streamSize, cudaMemcpyHostToDevice, stream[i]);
-		onErrorExit("memory", error, __LINE__);
-	
-		play<<< grid, threads, 0, stream[i] >>>(dPositions[i], dFlipped[i], 0, depth, dTranscript[i]);
-
-		// Copy result from device to host
-#ifdef DO_FLIP
-		// Copy resulting black&white positions
-		error = cudaMemcpyAsync(&hPositions[i][streamSize], &dPositions[i][streamSize], sizeof(ulonglong2) * streamSize, cudaMemcpyDeviceToHost, stream[i]);
-		onErrorExit("memory", error, __LINE__);
-#endif
 		
+		onErrorExit("memory", error, __LINE__);
+		cudaStreamSynchronize(stream[i]);
+
+		play<<< grid, threads, 0, stream[i] >>>(dPositions[i], dFlipped[i], 0, maxDepth, dTranscript[i]);
+
+		// Copy result from device to host		
 #ifdef DO_TRANSCRIPT
 		// FIX-ME: Won't work with multiple streams...
 		error = cudaMemcpyAsync(&hTranscript[i][0], &dTranscript[i][0], sizeof(int) * streamSize * 64, cudaMemcpyDeviceToHost, stream[i]);
 		onErrorExit("memory", error, __LINE__);
 #endif
 
-
-#ifndef DO_FLIP
+#ifdef COPY_RESULT_TO_HOST
 		// Copy only xor patterns
 		error = cudaMemcpyAsync(hFlipped[i], dFlipped[i], sizeof(uint64_t) * streamSize , cudaMemcpyDeviceToHost, stream[i]);
 		onErrorExit("memory", error, __LINE__);				
 #endif
 	}
-
 	for(int i=0; i < streams; i++){
 		cudaStreamSynchronize(stream[i]);
 	}	
@@ -642,18 +594,16 @@ int testKernel(int streams, int device, int depth)
 	for(int i=0; i < streams; i++){
 		// Prepare print-buffer// Prepare print-buffer
 		board[0] = 0;
-		printf("Before %d\n%s\n", i, toBoard(hPositions[i][0], 1, 0, board));
-#ifdef DO_FLIP
+		printf("Before %d\n%s\n", i, toBoard(hPositions[i][10], 1, 0, board));
+
 		// Prepare print-buffer		
 		board[0] = 0;
-		printf("After %d\n%s\n", i, toBoard(hFlipped[i][0], 1, 0, board));		
-		
-#endif
+		printf("After %d\n%s\n", i, toBoard(hFlipped[i][10], 1, 0, board));				
+
 #ifdef DO_TRANSCRIPT
 		// Prepare print-buffer		
 		board[0] = 0;
-		printf("Transcript %d:\n%s\n", i, formatTranscript(hTranscript[i], 1, 0, board));
-
+		printf("Transcript %d:\n%s\n", i, formatTranscript(hTranscript[i], 1, 0, board));		
 //		printf("After %d\n%s\n", i, toBoard_Pattern(hFlipped[i][0], 1, board));		
 #endif
 	}
@@ -662,8 +612,9 @@ int testKernel(int streams, int device, int depth)
 //		printf("%d: I=%I64U,%I64U R=%I64U,%I64U \n", i , hPositions[i*2], hPositions[i*2 + 1], hPositions[i*2 + numberOfPositions*2], hPositions[i*2 + numberOfPositions*2 +1]);
 //	}
 	
-	printf("End:   %ld:%ld.%ld\n", time.wMinute, time.wSecond, time.wMilliseconds);
-	printf("Total: %ld ms\n%5.3f mega moves per second\n", endMs, ((float) (numberOfMoves / endMs)) / 1000.0);
+	printf("Thread end:   %ld:%ld.%ld\n", time.wMinute, time.wSecond, time.wMilliseconds);
+	double megaMovesPerSecond = ((double)(numberOfMoves / endMs)) / 1000.0;
+	printf("Thread total: %ld ms\nThread: %5.3f mega moves per second\n", endMs, megaMovesPerSecond);
 
 
     // Clean up memory
@@ -683,9 +634,14 @@ int testKernel(int streams, int device, int depth)
 	}
 
     cudaDeviceReset();
+	statistics[device] = megaMovesPerSecond;
 	return 0;
 }
 
+
+DWORD WINAPI testKernalThreadable(LPVOID lpParam){
+	return testKernel(streams, *(int*) lpParam, depth, initFromFile);	
+}
 
 /**
  * Program main
@@ -694,33 +650,54 @@ int main(int argc, char **argv)
 {
     printf("[Othello Using CUDA] - Starting...\n");    
 
-    // Use a larger block size for Fermi and above
-    //int block_size = 16;  
+	HANDLE threadHandles[MAX_DEVICES];
 
-	int streams = 1;
-	int device = 0;
+	int devices = 2;
 	int nowait = 0;
-	int depth = DEFAULT_DEPTH;
 
 	for (int i = 1; i < argc; i++){
 		if (strncmp(argv[i],"-Dstreams", 9)==0){
 			streams = atoi(argv[++i]);
 		}
-		if (strncmp(argv[i],"-Ddevice", 8)==0){
+		if (strncmp(argv[i],"-Ddevices", 7)==0){
+			devices = atoi(argv[++i]);
+			if (devices > MAX_DEVICES){
+				printf("Maximum number of devices is %d", MAX_DEVICES);
+				exit(1);
+			}
+		}else if (strncmp(argv[i],"-Ddevice", 8)==0){
 			device = atoi(argv[++i]);
 		}
-		if (strncmp(argv[i],"-Ddepth", 8)==0){
+		if (strncmp(argv[i],"-Ddepth", 7)==0){
 			depth = atoi(argv[++i]);
 		}
-		if (strncmp(argv[i],"-Dnowait", 8)==0){
+		if (strncmp(argv[i],"-Dnowait", 7)==0){
 			nowait = 1;
+		}
+		if (strncmp(argv[i], "-Dfile", 6) == 0){
+			initFromFile = 1;
 		}
 	}
 
 	//for(int a = 1; a<depth; a++){		  	
 	//	int result = testKernel(streams, device, a);
 	//}
-	int result = testKernel(streams, device, depth);
+
+	int deviceNr[MAX_DEVICES];
+	
+	for (int i = 0; i < devices; i++){
+		deviceNr[i] = i;
+		threadHandles[i] = CreateThread(NULL, 0, testKernalThreadable, &deviceNr[i], 0, NULL);
+	}
+
+	WaitForMultipleObjects(devices, threadHandles, TRUE, INFINITE);
+
+	double mmps = 0.0;
+	for (int i = 0; i < devices; i++){
+		CloseHandle(threadHandles[i]);
+		mmps += statistics[i];
+	}
+	printf("Total: %5.3f mega moves per second\n", mmps);
 
 	if (!nowait){
 		getchar();
